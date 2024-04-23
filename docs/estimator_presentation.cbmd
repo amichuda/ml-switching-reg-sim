@@ -1,0 +1,684 @@
+---
+title: Switching Regression as Robust Estimation against Misclassification in Machine Learning Classification
+author: Aleksandr Michuda
+institute: UC Davis Agricultural and Resource Economics
+---
+
+```{.python .cb.nb jupyter_kernel=python3 hide=all session=python}
+# Preliminaries
+import os
+os.chdir("/home/michuda/Dissertation")
+import numpy as np
+from UgandaUber.Estimation.modules.monte_carlo import SimulationVisualizer, DirectorySimulationVisualizer
+from UgandaUber.Estimation.modules.utils import create_list_covariance_matrices
+from functools import partial
+from sklearn.model_selection import ParameterGrid
+import matplotlib.pyplot as plt
+
+import warnings
+warnings.simplefilter("ignore")
+
+# Default data construction parameters
+construct_kwds = {
+    "y_sd": [1,1],
+    "drought_mean": [0, 0],
+    "drought_cov": [1,1],
+    "beta0": [1,2],
+    "beta1": [-1,-2],
+    "y_name": "y",
+    "weight": 0.1,
+    "reg_ready": False,
+    "output_true_beta": True,
+}
+
+def STN(sigma, beta0, beta1, return_single = False, return_other = False):
+    
+    A = np.array(beta0)/np.sqrt(np.array(beta1)**2 + np.array(sigma)**2)
+    
+    if return_single:
+        if return_other:
+            return A[1]
+        else:
+            return A[0]
+    
+    return A
+
+STN_partial = partial(STN,
+                      beta0 = construct_kwds.get('beta0'),
+                      beta1 = construct_kwds.get('beta1'),
+                      return_single=True)
+
+# create multivariate signal to noise ratio based on mahalanobis distance
+def STN_m(sigma, beta0, beta1):
+    """Calculate multivariate STN
+
+    Args:
+        mu (np.ndarray): vector of means
+        sigma (np.ndarray): variance-covariance matrix
+    """
+    # First get inverse of var-covar
+    if isinstance(sigma, list):
+        sigma = np.array(sigma)
+    if isinstance(beta0, list):
+        beta0 = np.array(beta0)
+    if isinstance(beta1, list):
+        beta1 = np.array(beta1)
+            
+    
+    sigma_2 = beta1@sigma@beta1 + np.identity(beta1.size)
+    
+    sigma_inv = numpy.linalg.inv(sigma_2)
+    
+    return mahalanobis(beta0, 0, sigma_inv)
+
+STN_m_partial = partial(STN_m,
+                        beta0 = construct_kwds.get('beta0'),
+                        beta1 = construct_kwds.get('beta1'))
+
+STN_partial_other = partial(STN,
+                      beta0 = construct_kwds.get('beta0'),
+                      beta1 = construct_kwds.get('beta1'),
+                      return_single=True,
+                      return_other=True)
+
+construct_kwds_3 = {
+    "y_sd": [1,1,1],
+    "drought_mean": [0, 0,0],
+    "drought_cov": [1,1,1],
+    "beta0": [1,2,3],
+    "beta1": [-1,-2,-3],
+    "y_name": "y",
+    "weight": 0.1,
+    "reg_ready": False,
+    "output_true_beta": True,
+}
+
+STN_partial_3 = partial(STN,
+                      beta0 = construct_kwds_3.get('beta0'),
+                      beta1 = construct_kwds_3.get('beta1'),
+                      return_single=True)
+
+
+def get_covar(x):
+    
+    return np.array(x)[0,1]
+
+
+```
+
+## Introduction
+
+- How does urban labor supply respond to agricultural income shocks?
+  - Rural-Urban linkages
+  - Driving Uber as insurance/income diversification
+- Can machine learning help when location data is unavailable?
+  - Requires less data
+  - But introduces misclassification
+  - **Can we develop an estimator that is robust to that misclassification?**
+
+## Data 
+
+- Uber Driver Data
+  - Hours online
+  - Earnings
+- Weather Shocks
+  - Drought Indices (SPI, NDVIA)
+- Predicted Rural Place Origin
+  - SAP Region (4)
+  - FAO Agro-ecological Zones (10)
+    - Distribution of probabilities
+  
+## Prediction Table
+
+| Name   |   Central |       East |     North |       West |
+|:----------------|----------:|-----------:|----------:|-----------:|
+| Ahimbisibwe     | 0.144  | 0.003 | 0.001  | 0.925   |
+| Amin            | 0.149   | 0.057  | 0.651  | 0.140   |
+| Auma            | 0.040 | 0.267   | 0.674    | 0.017  |
+| Kadaga          | 0.148  | 0.797   | 0         | 0.054  |
+| Makubuya        | 0.964  | 0.018  | 0         | 0.017  |
+| Museveni        | 0.164  | 0.022  | 0.042 | 0.769   |
+| Oculi           | 0.015 | 0.263   | 0.717  | 0.003 |
+
+## Misclassification is a problem
+
+- Predictions might contain misclassification error
+  - For ex: we are classifying "Amin" into North, but it might be that they are actually more connected to the Center.
+  - Not from any systematic bias during machine learning process
+  - We can "imperfectly" break drivers into groups
+
+## What if I use OLS?
+
+- We can estimate with OLS
+- But response to drought will be attenuated.
+- Is there a better way to estimate it?
+  - We can model the misclassification directly
+  - "What's the probability that I categorize Amin into the North regime, given that they're truly from the Center?, etc."
+  
+## Objectives Today
+
+- Presenting a Maximum Likelihood Estimator
+  - inspired by switching regression literature
+- How does this estimator perform under varying levels of misclassification compared to OLS?
+- Explore through Monte Carlo Simulations
+
+
+## The Hours Function
+
+- Each regime $i \in I$ can be expressed as a linear function of $SPI^i$ and $Hours$:
+
+$$
+Hours = \beta_0^i + \beta_1^i SPI^i + \varepsilon^i
+$$
+
+- The goal is to recover $\beta_1^0$ and $\beta_1^1$
+
+## Without Misclassification
+
+- Suppose there's a true membership indicator, $I$.
+- The conditional expectation function is then:
+
+$$
+E(Hours | I, SPI ^i) = 1\{I=0\} (\beta_0^0 +\beta_1^0 SPI ^0) + 1\{I=1\} (\beta_0^1+\beta_1^1 SPI ^1) 
+$$
+
+- Without misclassification and with a separation indicator, we can recover $\beta_1^0$ and $\beta_1^1$ without bias, by using $I$ as a variable in an OLS regression.
+
+
+## Misclassification in Regimes
+
+- In our case we do not observe $I$, but we do observe $r$. 
+- $r$ gives us a measure of $I$ with *measurement error*.
+- We can express the measurement error in terms of a matrix of conditional probabilities with  $p_{i}^j = Pr(r=i | I=j)$.
+
+|-|$r=0$|$r=1$|
+|-|------:|----:|
+|$I=0$|$p_{0}^0$|$p_{1}^0$|
+|$I=1$|$p_{0}^1$|$p_{1}^1$|
+
+- If $p_0^1 = p_1^0 =0$, then there is no misclassification.
+
+## Conditional Expectation with Misclassification
+
+- In the case of misclassification, the conditional expectation function is then:
+
+$$\begin{aligned}
+E(Hours |r) = \\
+\overbrace{(\beta_0^0 + \beta_1^1 SPI^0)}^{E(Hours|I=0)}\cdot (1-r) \cdot \overbrace{(1-\lambda) p_0^0}^{Pr(r=0, I=0)} +\\
+\overbrace{(\beta_0^1 + \beta_1^1 SPI^1)}^{E(Hours |I=1)} \cdot (1-r) \cdot \overbrace{\lambda p_0^1}^{Pr(r=0, I=1)} +\\
+\overbrace{(\beta_0^0 + \beta_1^0 SPI^0)}^{E(Hours |I=0)} \cdot r \cdot \overbrace{(1-\lambda) p_1^0}^{Pr(r=1, I=0)} + \\
+\overbrace{(\beta_0^1 + \beta_1^1 SPI^1)}^{E(Hours | I=1)} \cdot r \cdot \overbrace{\lambda p_1^1}^{Pr(r=1, I=1)} \\
+\end{aligned}$$
+
+- $Pr(I=1) = \lambda$
+
+
+## Using OLS with Misclassification
+
+- If we use the same OLS strategy as before:
+
+$$
+Hours = 1\{r=0\} + 1\{r=1\} + \beta_1^0 SPI^0\cdot 1\{r=0\} + \beta_1^1 SPI^1 \cdot 1\{r=1\} + \varepsilon
+$$
+
+- Leads to biased estimate, proportionate to extent of misclassification
+  - $ABias(\beta^0) =\frac{(1-\lambda) p_0^1}{p_0^0 + p_0^1}\cdot (\Sigma_{00}^{-1} \Sigma_{01} \beta^1 - \beta^0)$
+    - $\beta^r = [\beta_0^r \text{ } \beta_1^r]$, $\Sigma_{jk} = E(x'_{j} x_{k})$
+  - $ABias(\beta^1) =\frac{\lambda p_1^0}{p_1^0 + p_1^1}\cdot (\Sigma_{11}^{-1} \Sigma_{10} \beta^0 - \beta^1)$
+    - $\beta^r = [\beta_0^r \text{ } \beta_1^r]$, $\Sigma_{jk} = E(x'_{j} x_{k})$
+    - $x_{r} = [1 \text{ } SPI^r]$
+
+## ML Approach
+
+- Generalizing Lee and Porter (1985) to more than two regimes
+  - Switching Regression with imperfect sample separation
+- Flatten probabilities to a categorical 
+  - Take maximum of probabilities as truth, $r$
+
+| original_name   |   Central |       East |     North |       West | Region Indicator ($r$) |
+|:----------------|----------:|-----------:|----------:|-----------:| ----------------:|
+| Ahimbisibwe     | 0.144  | 0.003 | 0.001  | 0.925   | West             |
+| Amin            | 0.149  | 0.057 | 0.651  | 0.140   | North            |
+| Auma            | 0.040 | 0.267| 0.674    | 0.017  | North            |
+| Kadaga          | 0.148 | 0.797| 0         | 0.054  | East             |
+| Makubuya        | 0.964  | 0.018 | 0         | 0.017  | Central          |
+| Museveni        | 0.164  | 0.022 | 0.042 | 0.769   | West             |
+| Oculi           | 0.015 | 0.263| 0.717  | 0.003 | North            |
+
+
+## A Maximum Likelihood Alternative
+
+- Each regime is normally distributed with mean $Hours - \beta_0^r - \beta_1^r SPI^r$ and standard deviation $\sigma_r$, with density  $f_r$.
+- We can then write the joint density of $\varepsilon_{r}$ and $r$ as:
+
+$$\begin{aligned}
+& f(\varepsilon_{r}, r) = f_0(\varepsilon_{0})\left[ r\lambda p_0^0 + (1-r)\lambda (1-p_0^0) \right]  + \\
+& f_1(\varepsilon_{1}) \left[ r(1-\lambda) (1-p_1^1) + (1-r)(1-\lambda) p_1^1 \right]
+\end{aligned}$$
+
+## The Likelihood Function
+
+- The likelihood function of the estimator is then:
+
+$$\begin{aligned}
+& L(\beta, \sigma, p, \lambda) = \\
+& \left[ f_0 (\varepsilon_{i1t}) \lambda p_{11} + f_1 (\varepsilon_{i1t}) (1-\lambda) p_{10}  \right]^{r} \\
+& \cdot \left[ f_0 (\varepsilon_{i0t}) \lambda (1-p_{11}) + f_1 (\varepsilon_{i0t}) (1-\lambda) (1-p_{10})  \right]^{1-r} 
+\end{aligned}$$
+
+- We can maximize the log-likelihood to find optimal parameters for each of the parameters above.
+- We can run Monte Carlo simulations of the MLE and an OLS analogue to compare the performance of the estimator.
+
+
+## Baseline Values for Simulation {#baseline-values-for-simulation}
+
+- Data is modelled as crossection
+- Actual data is panel
+
+| Parameter| 
+|-----------|
+|Simulations in each =200|
+|Drivers = 275   |
+|Time periods = 10    |
+|Regimes=2 |
+| $\sigma_0=\sigma_1=1$ |
+| $E(SPI^0)=E(SPI^1)=0$ |
+| $Var(SPI^0)=Var(SPI^1)=1$ |
+| $Cov(SPI^0, SPI^1)=0$|
+| $\beta_0^0=20$, $\beta_0^1=35$|
+| $\beta_1^0=-1$. $\beta_1^1=-2$ |
+
+[How is misclassification created?](#misclassification-procedure)
+
+## Misclassification Plots $R=2$
+
+- Increase severity of misclassification
+
+```{.python .cb.nb session=python show=stderr}
+
+v = DirectorySimulationVisualizer()
+
+misclass_2_data = v.create_data(
+    directory='misclass_2_test',
+    param_name='weight',
+    f = None,
+    str_replace=False
+    )
+
+misclass_2_stats = v.calculate_statistics(misclass_2_data)
+
+
+for i in ['beta_0', 'beta_1', 'sigma']:
+  
+  v.plot(misclass_2_stats, to_plot=i)
+  
+  plt.savefig(f"UgandaUber/Estimation/reports/figures/misclass_2_{i}.png", dpi=160)
+```
+
+![Increasing Misclassification $R=2$](figures/misclass_2_beta_1.png){width=75%}
+
+
+## Generalizing to $R>2$ 
+
+- For $R>2$, $r$ becomes a categorical variable and we now use the mutually exclusive and exhaustive indicator functions for each regime, $G_i \equiv1\{r = i\}$
+- There are now $R-1$, $\lambda$ parameters
+- The probability matrix will be an RxR matrix
+- Consider R=3:
+
+| | $G_0=1$ | $G_1=1$|$G_2=1$|
+|-|---------:|--------:|-------:|
+|$I=0$|$p_{0}^0$|$p_{1}^0$|$p_{2}^0$|
+|$I=1$|$p_{0}^1$|$p_{1}^1$|$p_{2}^1$|
+|$I=2$|$p_{0}^2$|$p_{1}^2$|$p_{2}^2$|
+
+## Generalizing to $R>2$ 
+
+- The likelihood function now becomes:
+
+$$\begin{aligned}
+& L(\beta, \sigma, p, \lambda) = \\
+& \left[ f_0 (\varepsilon_{i0t}) \lambda_0 p_0^0 + f_1 (\varepsilon_{i0t}) \lambda_1 p_0^1 + f_2 (\varepsilon_{i0t}) (1-\lambda_0 - \lambda_1) p_0^2 \right]^{G_0} \\
+& \cdot \left[ f_0 (\varepsilon_{i1t}) \lambda_0 p_1^0 + f_1 (\varepsilon_{i1t}) \lambda_1 p_1^1 + f_2 (\varepsilon_{i1t}) (1-\lambda_0 - \lambda_1) p_1^2 \right]^{G_1} \\
+& \cdot \left[ f_0 (\varepsilon_{i2t}) \lambda_0 p_2^0 + f_1 (\varepsilon_{i2t}) \lambda_1 p_2^1 + f_2 (\varepsilon_{i2t}) (1-\lambda_0 - \lambda_1) p_2^2 \right]^{G_2}
+\end{aligned}$$
+
+## Baseline Values for Simulation ($R=3$)
+
+- Unless otherwise stated the values of each parameter in question will be as follows:
+
+| Parameter | 
+|-----------|
+|Simulations in each=200|
+|Drivers =275|
+|Time Periods =10|
+|Regimes =3|
+| $\sigma_0=\sigma_1=\sigma_2=1$ |
+| $E(SPI_0)=E(SPI_1)=E(SPI_2)=0$ |
+| $Var(SPI_0)=Var(SPI_1)=Var(SPI_2)=1$ |
+| $Cov(SPI_j, SPI_k)=0$|
+| $\beta_0^0=10$, $\beta_0^1=20$, $\beta_0^2=35$ | 
+|$\beta_1^0= -1$,$\beta_1^1=-2$, $\beta_1^2=-3$ |
+
+
+## Misclassification Plot $R=3$
+
+```{.python .cb.nb session=python hide=all}
+v3 = DirectorySimulationVisualizer(regimes=3)
+
+misclass_3_data = v3.create_data(
+    directory='misclass_3_test',
+    param_name='weight',
+    f = None,
+    str_replace=False)
+
+misclass_3_stats = v3.calculate_statistics(misclass_3_data, only_success=True)
+
+for i in ['beta_0', 'beta_1', 'sigma']:
+
+  v3.plot(misclass_3_stats, to_plot=i, xlabel = 'Misclassification')
+  plt.savefig(f"UgandaUber/Estimation/reports/figures/misclass_3_{i}.png", dpi=160)
+
+```
+
+![Increasing Misclassification $R=3$](figures/misclass_3_beta_1.png){width=75%}
+
+
+## Conclusion
+
+- MLE method is robust to misclassification
+  - but converges less often with more regimes
+  - better ways to specify function or calculate standard errors?
+- How best to sell results?
+- Regressions using real data require many regimes
+  - OLS regressions suggest promising results
+
+
+## Misclassification 2 Beta 0
+
+![Changing STN of Hours](figures/misclass_2_beta_0.png){width=75%}
+
+## Misclassification 2 Sigma
+
+![Changing STN of Hours](figures/misclass_2_sigma.png){width=75%}
+
+## Misclassification 3 Beta 0
+
+![Changing STN of Hours](figures/misclass_3_beta_0.png){width=75%}
+
+## Misclassification 3 Sigma
+
+![Changing STN of Hours](figures/misclass_3_sigma.png){width=75%}
+
+## Noise to Signal Ratio of Hours {#noise-to-signal-ratio-of-hours}
+
+- Focus on increasing the signal to noise ratio symmetrically across the two regimes
+- $STN = \frac{E(y_r)}{\sigma_r}$ 
+  
+```{.python .cb.nb session=python show=stderr}
+
+v = DirectorySimulationVisualizer()
+
+y_sd_sym = v.create_data(
+    directory = 'y_sd_sym_two_weights_new',
+    param_name='y_sd',
+    other_var='weight',
+    f = STN_partial,
+    num_replace=1,
+    regex=False,
+    )
+
+y_sd_sum_stats = v.calculate_statistics(y_sd_sym, other_var=True)
+
+for i in ['beta_0', 'beta_1', 'sigma']:
+  
+  v.plot(y_sd_sum_stats,to_plot=i, level_subset= ('other_var', 0.1))
+  
+  plt.savefig(f"UgandaUber/Estimation/reports/figures/sigma_{i}.png", dpi=160)
+```
+
+![Changing STN of Hours](figures/sigma_beta_1.png){#fig:sigma width=75%}
+
+[$\beta_0$](#two-regimes-stn-beta-0)
+
+
+[$\sigma$](#two-regimes-stn-sigma)
+
+
+## Correlation of SPI Shocks {#correlation-of-drought-shocks}
+
+- Increase correlation between SPI variables
+  - Increase from 0 to 0.9
+
+```{.python .cb.nb hide=all session=python}
+y_sd_sym = v.create_data(
+    directory='drought_shocks_two_weights_new',
+    param_name='drought_cov',
+    other_var='weight',
+    f = get_covar,
+    regex=True,
+    newline_repl=True
+    )
+
+drought_cov_shocks = v.calculate_statistics(y_sd_sym, other_var=True)
+
+for i in ['beta_0', 'beta_1', 'sigma']:
+  
+  v.plot(drought_cov_shocks,to_plot=i, level_subset= ('other_var', 0.1))
+  
+  plt.savefig(f"UgandaUber/Estimation/reports/figures/drought_corr_{i}.png", dpi=160)
+
+```
+
+![Changing Correlation of Drought Shocks](figures/drought_corr_beta_1.png){#fig:drought_corr width=75%}
+
+[$\beta_0$](#two-regimes-drought-correlation-beta-0)
+[$\sigma$](#two-regimes-drought-correlation-sigma)
+
+
+## Difference across Regime Responses {#difference-across-regimes-responses}
+
+- $\beta_1^0 =0$
+- $\beta_1^1$ ranges from 0 to 2
+
+```{.python .cb.nb session=python show=stderr}
+beta1_diff_data = v.create_data(
+    param_name='beta1',
+    directory = 'beta1_diff_two_weights_new',
+    other_var='weight',
+    f = lambda x: x[1],
+    comma_repl=True,
+    num_replace=2,
+    )
+beta1_diff_stats = v.calculate_statistics(beta1_diff_data,  other_var=True)
+
+for i in ['beta_0', 'beta_1', 'sigma']:
+  
+  v.plot(beta1_diff_stats, to_plot=i, level_subset= ('other_var', 0.1))
+  plt.savefig(f"UgandaUber/Estimation/reports/figures/{i}_diff.png", dpi=160)
+
+```
+
+![Regime Response Heterogeneity](figures/beta_1_diff.png){#fig:beta1_diff width=75%}
+
+[$\beta_0$](#two-regimes-response-beta-0)
+[$\sigma$](#two-regimes-response-sigma)
+
+## Noise to Signal Ratio of Hours ($R=3$) {#noise-to-signal-ratio-of-hours-r-3}
+
+- Same idea as before, but three regimes now
+  
+```{.python .cb.nb session=python hide=all}
+
+v3 = DirectorySimulationVisualizer(regimes=3)
+
+
+y_sd_sym = v3.create_data(
+    param_name='y_sd',
+    directory='y_sd_sym_3_two_weights_new',
+    other_var='weight',
+    f = STN_partial_3,
+    regex=True,
+    )
+
+y_sd_sym_3 = v3.calculate_statistics(y_sd_sym, other_var=True, only_success=True)
+
+for i in ['beta_1', 'beta_0', 'sigma']:
+  v3.plot(y_sd_sym_3, to_plot=i, level_subset= ('other_var', 0.1))
+  
+  plt.savefig(f"UgandaUber/Estimation/reports/figures/sigma_3_{i}.png", dpi=160)
+```
+
+![Changing STN of Hours](figures/sigma_3_beta_1.png){#fig:sigma_3 width=75%}
+
+[$\beta_0$](#three-regimes-stn-beta-0)
+[$\sigma$](#three-regimes-stn-sigma)
+
+
+## Correlation of Drought Shocks ($R=3$) {#correlation-of-drought-shocks-r-3}
+
+- Increase correlation between drought variables
+  - Increase from 0 to 0.9
+
+```{.python .cb.nb hide=all session=python}
+
+drought_shock_3_data = v3.create_data(
+    param_name='drought_cov',
+    directory = 'drought_shocks_3_two_weights_new',
+    other_var='weight',
+    f = lambda x: np.array(x)[0,1],
+    regex=True,
+    matrix_repl=True)
+
+drought_shock_3_stats = v3.calculate_statistics(drought_shock_3_data, other_var=True, only_success=True)
+
+for i in ['beta_0', 'beta_1', 'sigma']:
+  
+  v3.plot(drought_shock_3_stats, to_plot=i, level_subset = ('other_var', 0.1))
+
+  plt.savefig(f"UgandaUber/Estimation/reports/figures/drought_corr_3_{i}.png", dpi=160)
+
+```
+
+![Changing Correlation of Drought Shocks, $R=3$](figures/drought_corr_3_beta_1.png){#fig:drought_corr_3 width=75%}
+
+[$\beta_0$](three-regimes-drought-correlation-beta-0)
+[$\sigma$](three-regimes-drought-correlation-sigma)
+
+## Difference across Regime Responses ($R=3$) {#difference-across-regime-responses-r-3}
+
+
+```{.python .cb.nb hide=all session=python}
+
+beta_1_diff_3_data = v3.create_data(
+    directory='beta1_diff_3_two_weights_new',
+    param_name='beta1',
+    other_var='weight',
+    f = lambda x: x[1],
+    regex=True,
+    newline_repl=True)
+
+beta_1_diff_3_stats = v3.calculate_statistics(beta_1_diff_3_data, other_var=True, only_success=True)
+
+for i in ['beta_0', 'beta_1', 'sigma']:
+  
+  v3.plot(beta_1_diff_3_stats, to_plot=i, level_subset=('other_var', 0.1))
+
+  plt.savefig(f"UgandaUber/Estimation/reports/figures/beta1_diff_3_{i}.png", dpi=160)
+
+```
+
+![Changing Regime Response Heterogeneity, $R=3$](figures/beta1_diff_3_beta_1.png){#fig:beta1_diff3 width=75%}
+
+[$\beta_0$](three-regimes-response-beta-0)
+[$\sigma$](three-regimes-response-sigma)
+
+
+## Misclassification Procedure {#misclassification-procedure}
+
+- The misclassification matrix is a "jittered" matrix that introduces misclassification to the drivers after their memberships have already been chosen.
+
+![Diagram of Misclassification Procedure](figures/misclass_diagram.jpeg){width=75%}
+
+
+[Back](#baseline-values-for-simulation)
+
+## Two Regimes STN Sigma {#two-regimes-stn-sigma}
+
+![Two Regimes STN Sigma](figures/sigma_sigma.png){width=75%}
+
+[Back](#noise-to-signal-ratio-of-hours)
+
+## Two Regimes STN Beta 0 {#two-regimes-stn-beta-0}
+
+![Two Regimes STN $\beta_0$](figures/sigma_beta_0.png){width=75%}
+
+[Back](#noise-to-signal-ratio-of-hours)
+
+## Two Regimes Drought Correlation Sigma {#two-regimes-drought-correlation-sigma}
+
+![Two Regimes Drought Correlation Sigma](figures/drought_corr_sigma.png){width=75%}
+
+[Back](#correlation-of-drought-shocks)
+
+## Two Regimes Drought Correlation Beta 0 {#two-regimes-drought-correlation-beta-0}
+
+![Two Regimes Drought Correlation Beta 0](figures/drought_corr_beta_0.png){width=75%}
+
+[Back](#correlation-of-drought-shocks)
+
+## Two Regimes Response Sigma {#two-regimes-response-sigma}
+
+![Two Regimes Response Sigma](figures/sigma_diff.png){width=75%}
+
+[Back](#difference-across-regimes-responses)
+
+## Two Regimes Response Beta 0 {#two-regimes-response-beta-0}
+
+![Two Regimes Response Sigma](figures/beta_0_diff.png){width=75%}
+
+[Back](#difference-across-regimes-responses)
+
+
+## Three Regimes STN Sigma {#three-regimes-stn-sigma}
+
+![Three Regimes STN Sigma](figures/sigma_3_sigma.png){width=75%}
+
+[Back](#noise-to-signal-ratio-of-hours-r-3)
+
+## Three Regimes STN Beta 0 {#three-regimes-stn-beta-0}
+
+![Three Regimes STN $\beta_0$](figures/sigma_3_beta_0.png){width=75%}
+
+[Back](#noise-to-signal-ratio-of-hours-r-3)
+
+## Three Regimes Drought Correlation Sigma {#three-regimes-drought-correlation-sigma}
+
+![Three Regimes Drought Correlation Sigma](figures/drought_corr_3_sigma.png)
+
+[Back](#correlation-of-drought-shocks-r-3)
+
+## Three Regimes Drought Correlation Beta 0 {#three-regimes-drought-correlation-beta-0}
+
+![Three Regimes Drought Correlation Beta 0](figures/drought_corr_3_beta_0.png)
+
+[Back](#correlation-of-drought-shocks-r-3)
+
+## Three Regimes Response Sigma {#three-regimes-response-sigma}
+
+![Three Regimes Response Sigma](figures/beta1_diff_3_sigma.png){width=75%}
+
+[Back](#difference-across-regime-responses-r-3)
+
+## Three Regimes Response Beta 0 {#three-regimes-response-beta-0}
+
+![Three Regimes Response Sigma](figures/beta1_diff_3_beta_0.png){width=75%}
+
+[Back](#difference-across-regime-responses-r-3)
+
+## OLS Regressions on Region
+
+![Regression Results using SAP Region](figures/Screenshot%20from%202020-09-08%2015-51-45.png)
+
+## MLE Estimates on Region
+
+- Unavailable as MLE does not converge.

@@ -1,0 +1,12 @@
+graph TB
+	A[Drivers<br>Classified] 
+  -->
+  B
+  subgraph Misclassification Matrix
+    B(Identity matrix) 
+    --> 
+    D(Randomly add<br>number btwn 0,1<br>everywhere)
+    -->
+    |The higher the number,<br>the more misclassification| E(Re-normalize)
+  end
+  E-->C(Randomly<br>reassign<br>drivers<br>based on MM)
