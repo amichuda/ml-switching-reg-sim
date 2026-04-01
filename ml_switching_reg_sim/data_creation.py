@@ -449,8 +449,7 @@ class UberDatasetCreatorHet:
         if cov is None:
             cov = [1]*self.regimes
         
-        if isinstance(cov[0], (list, np.ndarray)):
-
+        if hasattr(cov[0], "__len__"):
             df = pd.DataFrame(
                 self.random.multivariate_normal(mean, cov, size=self.time_periods, 
                                                 check_valid = 'raise', 
