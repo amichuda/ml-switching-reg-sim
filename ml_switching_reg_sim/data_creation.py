@@ -3,6 +3,91 @@ import pandas as pd
 import numpy as np
 from functools import reduce
 from .utils import lagged_drought_df
+
+
+def extract_estimator_inputs(df, mw, regimes, lags=None):
+    """
+    Extract the unified estimator interface arrays from ``UberDatasetCreatorHet`` output.
+
+    Both ``MLSwitchingRegIRLS`` and ``DriverSpecificProbUberMLE.from_arrays`` accept
+    the same four arrays returned here.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Output of ``UberDatasetCreatorHet.construct()``.
+    mw : (R, R) ndarray
+        Row-stochastic confusion matrix returned alongside ``df``.
+        ``mw[true, predicted] = P(predicted | true)``.
+    regimes : int
+        Number of regimes.
+    lags : list of int or None
+        If None, uses contemporaneous ``drought_r`` covariates.
+        If provided (e.g. ``[1, 2]``), uses ``lagged_{lag}_drought_r`` columns.
+
+    Returns
+    -------
+    y : (N,)
+    X_list : list of R arrays each (N, p)
+        ``X_list[r] = [intercept, covariate(s)]`` for all N observations.
+    classifier_pred : (N, R)
+        Soft ML predictions ``misclass_regime_0, ..., misclass_regime_{R-1}``.
+    cm : (R, R)
+        Column-normalised confusion matrix: ``cm[k, j] = P(true=k | predicted=j)``.
+    """
+    N = len(df)
+    y = df["y"].values.astype(float)
+    if lags is None:
+        X_list = [
+            np.column_stack([np.ones(N), df[f"drought_{r}"].values.astype(float)])
+            for r in range(regimes)
+        ]
+    else:
+        X_list = [
+            np.column_stack(
+                [np.ones(N)]
+                + [df[f"lagged_{lag}_drought_{r}"].values.astype(float) for lag in lags]
+            )
+            for r in range(regimes)
+        ]
+    classifier_pred = df[
+        [f"misclass_regime_{r}" for r in range(regimes)]
+    ].values.astype(float)
+    cm = mw / mw.sum(axis=0, keepdims=True)   # column-normalise → P(true | pred)
+    return y, X_list, classifier_pred, cm
+
+
+def demean_arrays(y, X_list, entity_ids=None, time_ids=None):
+    """
+    Within-transform ``y`` and each array in ``X_list`` for entity and/or time
+    fixed effects.  The intercept column (column 0) is dropped from each X
+    array since it is collinear with the fixed effects.
+
+    Parameters
+    ----------
+    y : (N,) array
+    X_list : list of R arrays each (N, p) — column 0 must be the intercept
+    entity_ids : (N,) array of entity labels, or None
+    time_ids   : (N,) array of time labels, or None
+
+    Returns
+    -------
+    y_demeaned : (N,)
+    X_list_demeaned : list of R arrays each (N, p-1)  — intercept removed
+    """
+    y_s = pd.Series(y)
+    X_frames = [pd.DataFrame(X[:, 1:]) for X in X_list]   # drop intercept
+
+    if entity_ids is not None:
+        g = pd.Series(entity_ids)
+        y_s = y_s - y_s.groupby(g).transform('mean')
+        X_frames = [X.subtract(X.groupby(g).transform('mean')) for X in X_frames]
+    if time_ids is not None:
+        g = pd.Series(time_ids)
+        y_s = y_s - y_s.groupby(g).transform('mean')
+        X_frames = [X.subtract(X.groupby(g).transform('mean')) for X in X_frames]
+
+    return y_s.values, [X.values for X in X_frames]
 from mockseries.trend import LinearTrend, Switch
 from mockseries.seasonality import SinusoidalSeasonality
 from mockseries.noise import RedNoise
@@ -31,7 +116,7 @@ class UberDatasetCreator:
         
         self.dates = pd.date_range(start="2016-01-01",
               periods=self.time_periods,
-              freq='M')
+              freq='ME')
     
     def _create_drought_index(self,
                             mean: list = None,
@@ -271,7 +356,7 @@ class UberDatasetCreator:
         mw = self.misclassification_weight(self.regimes, weight)
 
         if jittered:
-            regime_dummies = self.regime_dummies(self, regime, weight)
+            regime_dummies = self.regime_dummies(regime, weight)
         else:
             mw = self.misclassification_weight(self.regimes, weight)
             
@@ -385,75 +470,121 @@ class MisclassificationCreator:
         return extent* (1-(1./self.regimes))
     
     def noisify_matrix(self, extent, index):
-        
+
         extent = self._index_to_misclassification(extent)
-        
+
         if self.regimes == 2:
-            new_array = np.array([1-extent])
-            
-            return np.insert(new_array, index, extent)
-        
+            new_array = np.array([extent])
+
+            return np.insert(new_array, index, 1-extent)
+
         def _recursive_fill_in(extent):
-            
-            
+
+
             if extent.shape == ():
                 extent_diff = extent.sum()
             else:
                 # Get what the next index will receive
                 extent_diff = reduce(lambda x,y: x-y, extent)
-                
+
             if extent.shape != () and extent.shape[0] == self.regimes-1:
-                
+
                 return np.append(extent, extent_diff)
-                
+
             new_extent = np.random.uniform(0, extent_diff)
-            
+
             return _recursive_fill_in(np.append(extent, new_extent))
-        
+
         new_vec = np.delete(_recursive_fill_in(np.array(extent)), 0)
-        
+
         self.random.shuffle(new_vec)
-        
+
         return np.insert(new_vec, index, 1-extent)
-        
+
 
 class UberDatasetCreatorHet:
-    
+
     def __init__(self,
-                 drivers = 275, 
+                 drivers = 275,
                  regimes = 4,
                  time_periods = 10,
-                 seed = None):
-        
+                 seed = None,
+                 lags = None):
+
         self.regimes = regimes
         self.drivers = drivers
         self.time_periods = time_periods
         self.N = drivers*regimes*time_periods
         self.seed = seed
-        
+        self.lags = lags
+
         # Create new random generator instance
         self.random = np.random.default_rng(seed=seed)
-    
+
+        self.dates = pd.date_range(start="2016-01-01",
+                                   periods=self.time_periods,
+                                   freq='ME')
+
     def _create_drought_index(self,
                             mean: list = None,
-                            cov =  None, 
-                            random_walk=False):
+                            cov =  None,
+                            random_walk=False,
+                            mock=False,
+                            mock_dict=None):
         """
-        Creates the drought index, optionally with correlation
-        (and maybe seasonality)
+        Creates the drought index, optionally with correlation, seasonality,
+        or mockseries time-series (mock=True).
         """
-        
+
+        if mock:
+            if mock_dict is None:
+                raise TypeError("Need mock_dict in order to use mockseries")
+
+            bases       = mock_dict.get('bases')
+            amplitudes  = mock_dict.get('amplitudes')
+            offsets     = mock_dict.get('offsets')
+            shock_times = mock_dict.get('shock_times')
+
+            if len(bases) != len(amplitudes) or len(bases) != self.regimes:
+                raise ValueError("mock_dict parameters must be equal in length and equal to number of regimes.")
+
+            alpha_r = {k: v for k, v in zip(range(self.regimes),
+                                             self.random.normal(0, 1, size=self.regimes))}
+
+            df = pd.DataFrame(
+                index=pd.DatetimeIndex(self.dates, name='time'),
+                columns=[f'drought_{i}' for i in range(self.regimes)],
+            )
+
+            for shock, base, amplitude, offset, r, ar in \
+                    zip(shock_times, bases, amplitudes, offsets, range(self.regimes), alpha_r.values()):
+                trend = LinearTrend(coefficient=0, time_unit=timedelta(days=30), flat_base=base)
+                seasonality = SinusoidalSeasonality(amplitude=amplitude, period=timedelta(days=90), offset=offset)
+                noise = RedNoise(mean=0, std=1, correlation=.5)
+                trans = LinearTransition(transition_window=timedelta(days=30), stop_window=timedelta(days=5))
+                switch = Switch(
+                    start_time=self.dates[shock[0]],
+                    base_value=0,
+                    switch_value=-5,
+                    stop_time=self.dates[shock[1]],
+                    transition=trans,
+                )
+                timeseries = trend + seasonality + noise + switch
+                df[f"drought_{r}"] = timeseries.generate(self.dates.tolist()) + ar
+
+            return df
+
         if mean is None:
             mean = [-1]*self.regimes
-            
+
         if cov is None:
             cov = [1]*self.regimes
-        
+
         if hasattr(cov[0], "__len__"):
             df = pd.DataFrame(
-                self.random.multivariate_normal(mean, cov, size=self.time_periods, 
-                                                check_valid = 'raise', 
-                                                method = 'eigh'), 
+                self.random.multivariate_normal(mean, cov, size=self.time_periods,
+                                                check_valid = 'raise',
+                                                method = 'eigh'),
                     columns = [f"drought_{i}" for i in range(self.regimes)]
                     )
         elif isinstance(cov[0], (int, float)):
@@ -461,29 +592,42 @@ class UberDatasetCreatorHet:
                 {f'drought_{i}' : self.random.normal(m, sd, size= self.time_periods)\
                     for i, (m, sd) in enumerate(zip(mean, cov))}
             )
-        
+
         df.index.names = ['time']
-        
+
         return df
-    
-    def _create_drought_index_with_driver(self, 
-                                          mean = None, 
-                                          cov = None):
-        
+
+    def _create_drought_index_with_driver(self,
+                                          mean = None,
+                                          cov = None,
+                                          mock=False,
+                                          mock_dict=None):
+
         df_list = []
-        
+
         # Create drought data
-        drought_df = self._create_drought_index(mean = mean, cov=cov)
-        
+        drought_df = self._create_drought_index(mean=mean, cov=cov, mock=mock, mock_dict=mock_dict)
+        drought_cols = [f"drought_{i}" for i in range(self.regimes)]
+
         # Create list of the same data but with driver ids
         for i in range(self.drivers):
             df_list.append(drought_df.assign(driver = i))
 
         driver_time_df = pd.concat(df_list).set_index('driver', append=True)
-        
         driver_time_df.index.names = ['time', 'driver']
-        
-        return driver_time_df.reorder_levels(['driver', 'time'])
+
+        result = (
+            driver_time_df
+            .reorder_levels(['driver', 'time'])
+            .reset_index()
+            .pipe(lagged_drought_df, drought_cols,
+                  shift=self.lags, groupby_index='driver', date_col='time',
+                  dropna=(self.lags is not None))
+            .set_index(['driver', 'time'])
+            .reorder_levels(['driver', 'time'])
+        )
+
+        return result
 
     
     def _create_driver_index(self):
@@ -519,27 +663,37 @@ class UberDatasetCreatorHet:
                 
         
     def _create_y(self, data, beta1, beta0 = None, name = 'y', sd= None):
-        
+
         if sd is None:
             sd = [1]*self.regimes
         if isinstance(beta0, int):
             beta0 = [beta0]*self.regimes
         if isinstance(beta1, int):
             beta1 = [beta1]*self.regimes
-            
+
         def y_lambda(i):
-            return lambda df: beta0[i] + beta1[i]*df[f'drought_{i}'] + self.random.normal(0, 
-                                                                                          sd[i], 
-                                                                                          self.time_periods*self.drivers)
-            
+            if self.lags is not None:
+                # beta1 is a shared vector of length len(lags)
+                beta1_arr = np.asarray(beta1)
+                return lambda df: (
+                    beta0[i]
+                    + df.filter(regex=rf"lagged_\d+_drought_{i}").values @ beta1_arr
+                    + self.random.normal(0, sd[i], len(df))
+                )
+            else:
+                return lambda df: (
+                    beta0[i] + beta1[i] * df[f'drought_{i}']
+                    + self.random.normal(0, sd[i], len(df))
+                )
+
         df = (
             data
             .assign(**{name + f'_{i}' : y_lambda(i) for i in range(self.regimes)})
         )
-        
+
         return df
-        
-    def construct(self, 
+
+    def construct(self,
                   seed=None,
                   y_sd = None,
                   drought_mean = None,
@@ -552,27 +706,31 @@ class UberDatasetCreatorHet:
                   output_true_beta = False,
                   output_sigma = False,
                   jittered = True,
+                  driver_fe = False,
+                  time_fe = False,
+                  mock = False,
+                  mock_dict = None,
                   ):
         
         if seed is not None:
             self.random = np.random.default_rng(seed=seed)
-        
+
         # Create drought index
-        drought = self._create_drought_index_with_driver(mean = drought_mean,
-                                                         cov = drought_cov)
-        
+        drought = self._create_drought_index_with_driver(mean=drought_mean, cov=drought_cov,
+                                                         mock=mock, mock_dict=mock_dict)
+
         # Create randomly assigned regime membership
-        regime = pd.concat([self._create_driver_index(), 
-                             self._create_regime_index()], 
+        regime = pd.concat([self._create_driver_index(),
+                             self._create_regime_index()],
                            axis=1)
-        
+
         # Get weight matrix for misclassification
         mw = self.misclassification_weight(self.regimes, weight)
 
         if jittered:
-            
-            m = MisclassificationCreator(self.regimes)  
-                      
+
+            m = MisclassificationCreator(self.regimes)
+
             # Create wrong regime variable
             regime_with_misclassified = (
                 regime
@@ -580,14 +738,14 @@ class UberDatasetCreatorHet:
                     .apply(lambda x: m.noisify_matrix(extent=weight, index=x))
                     )
             )
-            
+
             regime_dummies = (
-                pd.concat([pd.get_dummies(regime_with_misclassified, columns=['regime']), 
+                pd.concat([pd.get_dummies(regime_with_misclassified, columns=['regime']),
                            regime_with_misclassified
-                           .apply(lambda x: x['misclass_regime'], 
-                                  result_type='expand', 
+                           .apply(lambda x: x['misclass_regime'],
+                                  result_type='expand',
                                   axis=1)
-                           ], 
+                           ],
                           axis=1)
                 .rename({old: f"misclass_regime_{old}" for old in range(self.regimes)}, axis=1)
                 .assign(max_misclass_regime = lambda df: df['misclass_regime'].apply(lambda x: x.argmax()))
@@ -595,7 +753,7 @@ class UberDatasetCreatorHet:
             )
         else:
             mw = self.misclassification_weight(self.regimes, weight)
-            
+
             # Create wrong regime variable
             regime_with_misclassified = (
                 regime
@@ -603,44 +761,54 @@ class UberDatasetCreatorHet:
                     .apply(self._misclassify_regime, mw = mw)
                     )
             )
-        
+
             # Now create dummies for regime and wrong regime
             regime_dummies = pd.get_dummies(regime_with_misclassified,
                                             columns = ['regime', 'misclass_regime'])
-        
+
         # Create y-variable and merge in regime
         df = (
             drought
             .join(regime_dummies.set_index('driver'))
             .join(regime_with_misclassified.set_index('driver'))
-            .pipe(self._create_y, 
-                  beta0 = beta0, 
-                  beta1=beta1, 
-                  name = y_name, 
+            .pipe(self._create_y,
+                  beta0 = beta0,
+                  beta1=beta1,
+                  name = y_name,
                   sd= y_sd)
             .pipe(pd.get_dummies, columns=['max_misclass_regime'])
         )
-        
+
         for r in range(self.regimes):
-            
             df.loc[lambda df: df['regime'] == r, y_name] = df[f'{y_name}_{r}']
-            
+
+        # Add fixed effects to y — use actual index values as keys
+        driver_ids = df.index.get_level_values('driver').unique().tolist()
+        time_ids   = df.index.get_level_values('time').unique().tolist()
+        alpha_i = {k: v for k, v in zip(driver_ids, self.random.normal(0, 1, size=len(driver_ids)))} \
+                  if driver_fe else {k: 0 for k in driver_ids}
+        alpha_t = {k: v for k, v in zip(time_ids, self.random.normal(0, 1, size=len(time_ids)))} \
+                  if time_fe else {k: 0 for k in time_ids}
+
+        df = df.assign(
+            alpha_i = df.index.get_level_values('driver').map(alpha_i),
+            alpha_t = df.index.get_level_values('time').map(alpha_t),
+            y = lambda df: df['y'] + df['alpha_i'] + df['alpha_t'],
+        )
+
         if reg_ready:
-            
             # Get regime columns
             regime_cols = df.columns[df.columns.str.contains("^regime")].tolist()
-            
             # Get y columns
             y_cols = df.columns[df.columns.str.contains(f"{y_name}_")].tolist()
-            
-            df = df.drop(regime_cols + y_cols + ['regime', 'misclass_regime'],axis=1)
-        
+            df = df.drop(regime_cols + y_cols + ['regime', 'misclass_regime'], axis=1)
+
         if output_true_beta:
             if output_sigma:
                 return df, mw, [beta0, beta1], y_sd
             else:
                 return df, mw, [beta0, beta1]
-                    
+
         return df, mw
     
 class MisclassificationCreator:
@@ -675,42 +843,40 @@ class MisclassificationCreator:
         return extent* (1-(1./self.regimes))
     
     def noisify_matrix(self, extent, index):
-        
+
         extent = self._index_to_misclassification(extent)
-        
+
         if self.regimes == 2:
-            new_array = np.array([1-extent])
-            
-            return np.insert(new_array, index, extent)
-        
+            new_array = np.array([extent])
+
+            return np.insert(new_array, index, 1-extent)
+
         def _recursive_fill_in(extent):
-            
-            
+
+
             if extent.shape == ():
                 extent_diff = extent.sum()
             else:
                 # Get what the next index will receive
                 extent_diff = reduce(lambda x,y: x-y, extent)
-                
+
             if extent.shape != () and extent.shape[0] == self.regimes-1:
-                
+
                 return np.append(extent, extent_diff)
-                
+
             new_extent = np.random.uniform(0, extent_diff)
-            
+
             return _recursive_fill_in(np.append(extent, new_extent))
-        
+
         new_vec = np.delete(_recursive_fill_in(np.array(extent)), 0)
-        
+
         self.random.shuffle(new_vec)
-        
+
         return np.insert(new_vec, index, 1-extent)
-        
-        
-    
-    
-        
-    
+
+
+
+
         
         
         

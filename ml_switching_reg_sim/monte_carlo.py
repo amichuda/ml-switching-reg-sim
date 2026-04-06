@@ -199,9 +199,12 @@ class MonteCarlo:
         )
 
         res = mod.fit()
-        
 
-        return get_reg_effect(res), [np.nan]*len(drought_cols)
+        bse_beta0 = res.bse.loc[lambda s: ~s.index.str.contains("drought_")].values
+        bse_beta1 = res.bse.loc[lambda s: s.index.str.contains("misclass_regime_[0-9]:drought_")].values
+        bse_both = np.append(bse_beta0, bse_beta1)
+
+        return get_reg_effect(res), [np.nan]*len(drought_cols), bse_both
 
     def mle_fit(self, 
                 data, 
@@ -215,7 +218,7 @@ class MonteCarlo:
         drought_cols = self.drought_cols(data=data)
 
         if estimator is None:
-            us = UberMLE(
+            us = DriverSpecificProbUberMLE(
                 data=data,
                 endog_col=endog_col,
                 classifier_cols=classifier_cols,
@@ -251,32 +254,51 @@ class MonteCarlo:
             success = 0
         else:
             success=1
-            
+
+        bse_params = res_smle.bse.drop('sigma', errors='ignore')
+        bse_beta0 = bse_params.loc[lambda s: ~s.index.str.contains("drought_")].values
+        bse_beta1 = bse_params.loc[lambda s: s.index.str.contains("misclass_regime_[0-9]:drought_")].values
+        bse_mle_both = np.append(bse_beta0, bse_beta1)
+
+        bse_sigma = float(np.abs(res_smle.bse.loc['sigma'])) if 'sigma' in res_smle.bse.index else np.nan
+        bse_mle_sigmas = np.full(self.regimes, bse_sigma)
+
         return (
-            get_mle_betas(res_smle, 
-                              regimes=self.regimes), 
-                get_mle_sigmas(res_smle, 
-                               regimes=self.regimes), 
+            get_mle_betas(res_smle,
+                              regimes=self.regimes),
+                get_mle_sigmas(res_smle,
+                               regimes=self.regimes),
                 success,
-                res_smle
+                res_smle,
+                bse_mle_both,
+                bse_mle_sigmas,
                 )
 
     def append_reg_mle_results(self, df, mw, return_estimator=False, estimator=None, p_mat_start=None):
 
-        (_, _, reg_both), fake_sigmas = self.reg_fit(df)
+        (_, _, reg_both), fake_sigmas, bse_reg_both = self.reg_fit(df)
 
-        (_, _, mle_both), sigmas, success, estimator = self.mle_fit(df, beta_start=reg_both, mw=mw, estimator=estimator, p_mat_start=p_mat_start)
-        
-        reg_with_fake_sigmas = np.append(reg_both, fake_sigmas)
-        
-        reg_results = np.append(reg_with_fake_sigmas, mle_both)
-        
-        reg_sigma = np.append(reg_results, sigmas)
-        
+        (_, _, mle_both), sigmas, success, estimator_obj, bse_mle_both, bse_mle_sigmas = self.mle_fit(
+            df, beta_start=reg_both, mw=mw, estimator=estimator, p_mat_start=p_mat_start
+        )
+
+        # bse_reg_part: [bse_beta0s(R), bse_beta1s(R), NaN_sigmas(R)] = 3R
+        # bse_mle_part: [bse_beta0s(R), bse_beta1s(R), bse_sigmas(R)] = 3R
+        bse_reg_part = np.concatenate([bse_reg_both, np.full(self.regimes, np.nan)])
+        bse_mle_part = np.concatenate([bse_mle_both, bse_mle_sigmas])
+
+        # flat layout: reg_est(3R), mle_est(3R), bse_reg(3R), bse_mle(3R)
+        result = np.concatenate([
+            reg_both, fake_sigmas,
+            mle_both, sigmas,
+            bse_reg_part,
+            bse_mle_part,
+        ])
+
         if return_estimator:
-            return np.append(np.append(reg_sigma, success), estimator)
+            return np.append(np.append(result, success), estimator_obj)
 
-        return np.append(reg_sigma, success)
+        return np.append(result, success)
 
     def simulate(self, 
                  dataclass_list, 
@@ -334,25 +356,62 @@ class MonteCarlo:
                 )
             
             true_beta_array = np.array(dc.true_betas).reshape(len(dc.df_list), 2*self.regimes)
-            
+
             true_sigma_array = np.array(dc.true_sigmas).reshape(len(dc.df_list), self.regimes)
-            
+
             true_array = np.append(true_beta_array, true_sigma_array, axis=1)
-            
+
             pooled_sim_results_array = np.array(pooled_sim_results)
-            
+
+            R = self.regimes
+            # flat layout: reg_est(3R), mle_est(3R), bse_reg(3R), bse_mle(3R), success, estimator
+            estimates_array = pooled_sim_results_array[:, :6*R]
+            bse_reg_part = pooled_sim_results_array[:, 6*R:9*R]   # (n, 3R)
+            bse_mle_part = pooled_sim_results_array[:, 9*R:12*R]  # (n, 3R)
+
             sim_results_with_true_beta = np.append(
-                pooled_sim_results_array[:,:-2],
+                estimates_array,
                 true_array,
                 axis=1
                 )
-            
+
             estimators = pooled_sim_results_array[:, -1]
-            
-            results_df.loc[:, :] = np.append(np.append(sim_results_with_true_beta, 
+
+            results_df.loc[:, :] = np.append(np.append(sim_results_with_true_beta,
                                              pooled_sim_results_array[:,-2][:, np.newaxis],
                                              axis=1),
                                              estimators[:, np.newaxis], axis=1)
+
+            # Compute per-rep coverage indicators: 1 if true param is in 95% CI, else 0
+            for param_idx, param in enumerate(['beta_0', 'beta_1']):
+                for r_idx in range(R):
+                    regime = f'regime_{r_idx}'
+                    flat_idx = param_idx * R + r_idx
+                    true_vals = results_df[('true', param, regime)].values.astype(float)
+
+                    mle_est = results_df[('mle', param, regime)].values.astype(float)
+                    mle_bse = bse_mle_part[:, flat_idx].astype(float)
+                    results_df[f'coverage_mle_{param}_{regime}'] = (
+                        (true_vals >= mle_est - 1.96 * mle_bse) &
+                        (true_vals <= mle_est + 1.96 * mle_bse)
+                    ).astype(float)
+
+                    reg_est = results_df[('reg', param, regime)].values.astype(float)
+                    reg_bse = bse_reg_part[:, flat_idx].astype(float)
+                    results_df[f'coverage_reg_{param}_{regime}'] = (
+                        (true_vals >= reg_est - 1.96 * reg_bse) &
+                        (true_vals <= reg_est + 1.96 * reg_bse)
+                    ).astype(float)
+
+            for r_idx in range(R):
+                regime = f'regime_{r_idx}'
+                true_sigma = results_df[('true', 'sigma', regime)].values.astype(float)
+                mle_sigma = results_df[('mle', 'sigma', regime)].values.astype(float)
+                mle_sigma_bse = bse_mle_part[:, 2*R + r_idx].astype(float)
+                results_df[f'coverage_mle_sigma_{regime}'] = (
+                    (true_sigma >= mle_sigma - 1.96 * mle_sigma_bse) &
+                    (true_sigma <= mle_sigma + 1.96 * mle_sigma_bse)
+                ).astype(float)
             
             # Now get parameters and add them as columns
             change_params = [f.name for f in fields(dc) if f.repr]
@@ -471,38 +530,50 @@ class SimulationVisualizer:
             other_var = ['other_var']
         else:
             other_var = []
-        
+
         success_df = data[['success', 'x_var'] + other_var]
-        
+
         if only_success:
             data = data[(data['success']==1).values]
-        
-        
+
+        # Separate coverage columns (flat string names) from MultiIndex estimate columns
+        coverage_col_names = [c for c in data.columns if isinstance(c, str) and c.startswith('coverage_')]
+        drop_col = ('Unnamed: 0_level_0', 'Unnamed: 0_level_1', 'Unnamed: 0_level_2')
+        estimate_data = data.drop(columns=[drop_col] + coverage_col_names, errors='ignore')
+
         df = (
-            data
-            .drop(columns = [('Unnamed: 0_level_0', 'Unnamed: 0_level_1', 'Unnamed: 0_level_2')])
+            estimate_data
             .groupby(['x_var'] + other_var)
-            .agg(['mean', 
-                  'std', 
+            .agg(['mean',
+                  'std',
                   ('ci_low', lambda x: ss.t.interval(.95,
-                                                 len(x)-1, 
-                                                 x.mean(), 
+                                                 len(x)-1,
+                                                 x.mean(),
                                                  x.std())[0]
                    ),
                   ('ci_high', lambda x: ss.t.interval(.95,
-                                                 len(x)-1, 
-                                                 x.mean(), 
+                                                 len(x)-1,
+                                                 x.mean(),
                                                  x.std())[1])
                   ])
         )
-        
+
         success_df = (
             success_df
             .groupby(['x_var'] + other_var)
-            .mean()            
+            .mean()
         )
-        
-        return df, success_df
+
+        if coverage_col_names:
+            coverage_df = (
+                data[coverage_col_names + ['x_var'] + other_var]
+                .groupby(['x_var'] + other_var)
+                .mean()
+            )
+        else:
+            coverage_df = pd.DataFrame()
+
+        return df, success_df, coverage_df
     
     def plot(self, stats_data, to_plot = 'beta_1', level_subset = None, ax=None, fig=None, hide_true=False, xlabel=None):
         """The plotter function for the simulations results.
@@ -520,7 +591,7 @@ class SimulationVisualizer:
         subset_title = ''
         other_var_label = ''
         
-        stats, success_df = stats_data
+        stats, success_df, *_ = stats_data
         
         if isinstance(stats.index, pd.MultiIndex) and level_subset is None:
             raise Exception("Multindex in the data, but no subset was given.")
