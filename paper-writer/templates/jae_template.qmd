@@ -1,0 +1,218 @@
+---
+title: "PAPER TITLE"
+author:
+  - name: "First Author"
+    affiliation: "Department, Institution, City, Country"
+    email: "corresponding@email.edu"
+    corresponding: true
+  - name: "Second Author"
+    affiliation: "Department, Institution, City, Country"
+date: today
+date-format: long
+
+# JAE SUMMARY (≤100 words, no citations)
+abstract: |
+  Replace this with your summary. Must be 100 words or fewer.
+  Must not contain citations. Should condense the entire paper,
+  not just the conclusions.
+
+# JAE requires up to 6 keywords
+keywords:
+  - keyword one
+  - keyword two
+  - keyword three
+
+format:
+  pdf:
+    documentclass: article
+    classoption: [12pt, letterpaper]
+
+    # 1-inch margins on all sides
+    geometry:
+      - margin=1in
+
+    # Double spacing (JAE requirement)
+    linestretch: 2
+
+    # Latin Modern — safe, professional, no licensing issues
+    fontfamily: lmodern
+
+    # Numbered sections (1, 1.1, 1.1.1)
+    number-sections: true
+    number-depth: 3
+
+    # Keep .tex for debugging; disable for clean submission
+    keep-tex: true
+
+    # PDF metadata
+    colorlinks: false
+    linkcolor: black
+    citecolor: black
+    urlcolor: black
+
+    # LaTeX packages and preamble
+    include-in-header:
+      text: |
+        % ---- Core packages ----
+        \usepackage{booktabs}       % Three-rule tables (no vertical lines)
+        \usepackage{setspace}       % Line spacing control
+        \usepackage{natbib}         % Author-year citations
+        \usepackage{float}          % [H] placement specifier
+        \usepackage{placeins}       % \FloatBarrier to pin floats to sections
+        \usepackage{caption}        % Caption formatting
+        \usepackage{microtype}      % Better justification and hyphenation
+        \usepackage{amsmath}        % Math environments
+        \usepackage{amssymb}        % Math symbols
+
+        % ---- Caption style ----
+        % Tables: caption ABOVE (JAE convention)
+        % Figures: caption BELOW (JAE convention)
+        \captionsetup[table]{
+          position=top,
+          labelfont=bf,
+          labelsep=newline,
+          justification=justified,
+          singlelinecheck=false,
+          textfont=normalsize
+        }
+        \captionsetup[figure]{
+          position=bottom,
+          labelfont=bf,
+          labelsep=period,
+          justification=justified
+        }
+
+        % ---- Table label style: "TABLE 1" in bold caps ----
+        \renewcommand{\tablename}{\textbf{TABLE}}
+        \renewcommand{\figurename}{\textbf{FIGURE}}
+
+        % ---- Equation numbering: (1), (2), ... ----
+        % Default LaTeX numbering is already parenthesised — no change needed.
+
+        % ---- Page numbering: centered footer, no header ----
+        \usepackage{fancyhdr}
+        \pagestyle{fancy}
+        \fancyhf{}
+        \fancyfoot[C]{\thepage}
+        \renewcommand{\headrulewidth}{0pt}
+        \renewcommand{\footrulewidth}{0pt}
+        % Apply to first page too
+        \fancypagestyle{plain}{
+          \fancyhf{}
+          \fancyfoot[C]{\thepage}
+          \renewcommand{\headrulewidth}{0pt}
+        }
+
+        % ---- Section heading style (H1 = bold all-caps) ----
+        \usepackage{titlesec}
+        \titleformat{\section}
+          {\normalfont\bfseries\large}
+          {\thesection.}{0.5em}
+          {\MakeUppercase}
+        \titleformat{\subsection}
+          {\normalfont\bfseries\normalsize}
+          {\thesubsection.}{0.5em}{}
+        \titleformat{\subsubsection}
+          {\normalfont\bfseries\normalsize}
+          {\thesubsubsection.}{0.5em}{}
+
+        % ---- Prevent widows and orphans ----
+        \widowpenalty=10000
+        \clubpenalty=10000
+
+        % ---- Significance stars (redefine if using threeparttable) ----
+        % * p<0.10  ** p<0.05  *** p<0.01
+
+# ---- Bibliography ----
+bibliography: references.bib
+# jae.bst must be on the TeX path or in the working directory
+# Download from: https://ctan.org/tex-archive/biblio/bibtex/contrib/economic
+biblio-style: jae
+natbiboptions: round
+cite-method: natbib
+
+---
+
+<!-- ============================================================ -->
+<!-- DOCUMENT BODY                                                  -->
+<!-- ============================================================ -->
+
+<!-- Abstract and keywords are rendered from YAML above -->
+
+\newpage
+
+# Introduction
+
+Your introduction here. Use `\citep{key}` for parenthetical citations and
+`\citet{key}` for narrative citations.
+
+\FloatBarrier
+
+# Background
+
+\FloatBarrier
+
+# Data and Methodology
+
+## Data
+
+## Empirical Strategy
+
+\FloatBarrier
+
+# Results
+
+## Main Results
+
+<!-- Example: include a static LaTeX table from analysis repo -->
+<!--
+\begin{table}[htbp]
+\centering
+\caption{Main results.}
+\input{../analysis/output/tables/table_main.tex}
+\begin{flushleft}
+{\small \textit{Note.} Standard errors in parentheses.
+*** $p<0.01$, ** $p<0.05$, * $p<0.10$.}
+\end{flushleft}
+\end{table}
+-->
+
+\FloatBarrier
+
+## Robustness
+
+\FloatBarrier
+
+# Discussion
+
+\FloatBarrier
+
+# Conclusion
+
+\newpage
+
+# References {.unnumbered}
+
+::: {#refs}
+:::
+
+\newpage
+
+<!-- ============================================================ -->
+<!-- APPENDIX                                                       -->
+<!-- ============================================================ -->
+
+\appendix
+\renewcommand{\thesection}{\Alph{section}}
+\renewcommand{\theequation}{\Alph{section}\arabic{equation}}
+\renewcommand{\thetable}{\Alph{section}\arabic{table}}
+\renewcommand{\thefigure}{\Alph{section}\arabic{figure}}
+\setcounter{equation}{0}
+\setcounter{table}{0}
+\setcounter{figure}{0}
+
+# Appendix A: Additional Results {.unnumbered}
+
+Appendix content here. Equations are numbered (A1), (A2), tables as Table A1, etc.
+
+\FloatBarrier

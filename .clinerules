@@ -1,0 +1,36 @@
+# Cline Rules for ml-switching-reg-sim
+
+## Repository Overview
+This repository contains Monte Carlo simulation infrastructure for Michuda (2023). It tests a switching regression estimator that corrects for regime misclassification caused by machine learning models.
+
+**Key Dependency:** This repo depends on the companion package `ml-switching-reg` (located at `/Users/lordflaron/Documents/ml-switching-reg`). Always consider this dependency when modifying simulation logic or interpreting results.
+
+## Development Workflow
+- **Package Management:** Use `uv`. 
+  - To sync dependencies: `uv sync`
+  - Python version: `3.9 <= v < 3.11`
+- **Running Simulations/Notebooks:**
+  - **Priority:** Favor using **marimo** notebooks for development and interactive visualization where possible.
+  - For existing legacy workflows, use Jupyter notebooks (e.g., `jupyter notebook analytical_mat.ipynb`).
+  - Key simulation orchestration is done via the `MonteCarlo` class in `ml_switching_reg_sim/monte_carlo.py`.
+- **Data Generation:** 
+  - Use `UberDatasetCreator` and `MisclassificationCreator` in `ml_switching_reg_sim/data_creation.py` to generate synthetic datasets with configurable misclassification levels.
+
+## Domain Knowledge & Data Structures
+- **MultiIndex Structure:** Simulated datasets use a `(driver, time)` MultiIndex DataFrame.
+- **Column Naming Conventions:**
+  - Covariates: `drought_{i}`
+  - True Regimes: `regime_{i}` (dummies)
+  - ML Predictions (soft weights): `misclass_regime_{i}`
+- **Simulation Outputs:** The `MonteCarlo.simulate()` method returns results in a 3-level MultiIndex column: `(estimator, parameter, regime)`. Estimators typically include `{reg, mle, true}`.
+
+## Coding Standards
+- **Consistency:** Maintain the existing pattern of separating data generation (`data_creation.py`), orchestration (`monte_carlo.py`), and estimation baseline (`regression.py`).
+- **Performance:** Be aware that `ml-switching-reg` uses `numba` for performance; avoid breaking compatibility with fast likelihood evaluation if modifying related interfaces.
+- **Visualization:** Use the built-in `SimulationVisualizer` or `DirectorySimulationVisualizer` for generating plots from simulation results.
+
+## Claude Agent Context (Historical Plans)
+When working in this repo, remember that previous implementations have focused on:
+1.  Establishing a robust Monte Carlo harness using `multiprocessing`.
+2.  Implementing configurable misclassification via probability vectors (soft labels).
+3.  Creating automated visualization pipelines for comparing OLS vs. MLE estimates.

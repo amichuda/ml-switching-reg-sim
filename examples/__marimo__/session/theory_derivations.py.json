@@ -1,0 +1,200 @@
+{
+  "version": "1",
+  "metadata": {
+    "marimo_version": "0.22.4",
+    "script_metadata_hash": null
+  },
+  "cells": [
+    {
+      "id": "Hbol",
+      "code_hash": "0d1dc22200da46926fa558c3b6c31842",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "MJUe",
+      "code_hash": "872c12e3975ae59dd152f527cfbe099d",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h1 id=\"switching-regression-with-ml-misclassification-theory-and-derivations\">Switching Regression with ML Misclassification: Theory and Derivations</h1>\n<span class=\"paragraph\"><strong>Aleksandr Michuda</strong> \u00b7 Theory Supplement for Michuda (2024)</span>\n<hr />\n<h2 id=\"overview\">Overview</h2>\n<span class=\"paragraph\">This notebook derives the formal properties of the switching regression estimator\nthat corrects for ML-based regime misclassification. Each derivation is followed\nby a numerical simulation that verifies the analytic result.</span>\n<span class=\"paragraph\"><strong>Contents:</strong></span>\n<ol>\n<li>The Model: DGP and Likelihood</li>\n<li>MLE Score Equations</li>\n<li>IRLS as an EM Algorithm (convergence verification)</li>\n<li>Constant-Beta Restriction: Precision-Weighted Average</li>\n<li>OLS Bias Under Misclassification</li>\n<li>Sigma Bias</li>\n<li>Multi-Regime Scaling</li>\n<li>Correlated Shocks Bias</li>\n</ol></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "vblA",
+      "code_hash": "ccd0f611d27558265f42a612e68613fa",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"1-the-model\">1  The Model</h2>\n<h3 id=\"11-data-generating-process\">1.1  Data Generating Process</h3>\n<span class=\"paragraph\">Let <marimo-tex class=\"arithmatex\">||(i = 1,\\ldots,N||)</marimo-tex> index drivers, <marimo-tex class=\"arithmatex\">||(t = 1,\\ldots,T||)</marimo-tex> index time periods, and\n<marimo-tex class=\"arithmatex\">||(j \\in \\mathcal{R} = \\{0,\\ldots,R-1\\}||)</marimo-tex> index regions (regimes). Each driver <marimo-tex class=\"arithmatex\">||(i||)</marimo-tex>\nbelongs to a <strong>true</strong> region <marimo-tex class=\"arithmatex\">||(r_i \\in \\mathcal{R}||)</marimo-tex> (unobserved). The outcome\nfollows a switching regression:</span>\n<marimo-tex class=\"arithmatex\">||[y_{it} = X_{jt}'\\beta_j + \\varepsilon_{it}, \\qquad \\varepsilon_{it} \\overset{iid}{\\sim}\n\\mathcal{N}(0,\\sigma^2), \\quad j = r_i||]</marimo-tex><span class=\"paragraph\">where <marimo-tex class=\"arithmatex\">||(X_{jt} = [1,\\; d_{jt}]'||)</marimo-tex> is a <marimo-tex class=\"arithmatex\">||(2\\times 1||)</marimo-tex> vector of intercept plus the\nweather shock for region <marimo-tex class=\"arithmatex\">||(j||)</marimo-tex> at time <marimo-tex class=\"arithmatex\">||(t||)</marimo-tex>, and <marimo-tex class=\"arithmatex\">||(\\beta_j = [\\beta_{0j},\\; \\beta_{1j}]'||)</marimo-tex>.</span>\n<span class=\"paragraph\"><strong>Key feature:</strong> A single <marimo-tex class=\"arithmatex\">||(\\sigma^2||)</marimo-tex> is shared across all regimes.</span>\n<h3 id=\"12-misclassification-structure\">1.2  Misclassification Structure</h3>\n<span class=\"paragraph\">The econometrician observes a noisy ML prediction <marimo-tex class=\"arithmatex\">||(\\tilde{r}_i \\in \\mathcal{R}||)</marimo-tex>\ninstead of the true <marimo-tex class=\"arithmatex\">||(r_i||)</marimo-tex>.  The confusion matrix summarises classification errors:</span>\n<marimo-tex class=\"arithmatex\">||[\\pi_{ij} = P(r = i \\mid \\tilde{r} = j) = \\frac{q_{ij}}{\\sum_{k\\in\\mathcal{R}} q_{kj}}||]</marimo-tex><span class=\"paragraph\">where <marimo-tex class=\"arithmatex\">||(q_{ij} = P(r=i,\\;\\tilde{r}=j)||)</marimo-tex> is the joint distribution (column-normalised\nto obtain the conditional).</span>\n<span class=\"paragraph\">For each observation <marimo-tex class=\"arithmatex\">||(n||)</marimo-tex>, the classifier also provides a soft probability vector\n<marimo-tex class=\"arithmatex\">||(\\mathbf{p}_n = [p_0(n),\\ldots,p_{R-1}(n)]'||)</marimo-tex> with <marimo-tex class=\"arithmatex\">||(p_j(n)=P(\\tilde{r}=j)||)</marimo-tex>.\nThe <strong>mixing weights</strong> are then:</span>\n<marimo-tex class=\"arithmatex\">||[w_n(j) = \\sum_{k=0}^{R-1} p_k(n)\\,\\pi_{jk}\n\\qquad \\Longleftrightarrow \\qquad\n\\mathbf{w}_n = \\boldsymbol{\\Pi}\\,\\mathbf{p}_n||]</marimo-tex><span class=\"paragraph\">These are <strong>precomputed and fixed</strong> \u2014 they are not estimated. In code this is\n<code>weighted_cm[n, :] = classifier_pred[n, :] @ cm.T</code>.</span>\n<h3 id=\"13-the-likelihood\">1.3  The Likelihood</h3>\n<span class=\"paragraph\">Conditional on <marimo-tex class=\"arithmatex\">||(w_n(j)||)</marimo-tex>, the likelihood for one observation is a mixture of\nGaussians with fixed weights:</span>\n<marimo-tex class=\"arithmatex\">||[L_n(\\boldsymbol{\\beta},\\sigma) = \\sum_{j=0}^{R-1}\n\\frac{1}{\\sigma}\\phi\\!\\left(\\frac{y_n - X_{jn}'\\beta_j}{\\sigma}\\right) w_n(j)||]</marimo-tex><span class=\"paragraph\">where <marimo-tex class=\"arithmatex\">||(\\phi(\\cdot)||)</marimo-tex> is the standard normal pdf. The full log-likelihood is:</span>\n<marimo-tex class=\"arithmatex\">||[\\ell(\\boldsymbol{\\beta},\\sigma) = \\sum_{n=1}^{N} \\log L_n(\\boldsymbol{\\beta},\\sigma)||]</marimo-tex><span class=\"paragraph\"><strong>Note:</strong> This mirrors the Lee-Porter (1984) imperfect-separation switching\nregression, except that the mixing weights come from an external ML classifier\nrather than being estimated jointly.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "bkHC",
+      "code_hash": "6bf84a9ec445451c6e89fbd3a63610b8",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "lEQa",
+      "code_hash": "becc7924fbabf68d398a3d97f9907a7d",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"2-mle-score-equations\">2  MLE Score Equations</h2>\n<h3 id=\"21-posterior-weights-e-step-quantity\">2.1  Posterior Weights (E-step Quantity)</h3>\n<span class=\"paragraph\">Define the <strong>posterior regime probability</strong> for observation <marimo-tex class=\"arithmatex\">||(n||)</marimo-tex> and regime <marimo-tex class=\"arithmatex\">||(j||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[\\tau_{nj} = \\frac{\\displaystyle\\frac{1}{\\sigma}\\phi\\!\\left(\\frac{y_n-X_{jn}'\\beta_j}{\\sigma}\\right) w_n(j)}\n{\\displaystyle\\sum_{k=0}^{R-1}\\frac{1}{\\sigma}\\phi\\!\\left(\\frac{y_n-X_{kn}'\\beta_k}{\\sigma}\\right) w_n(k)}\n= \\frac{\\phi_j^{(n)}\\, w_n(j)}{L_n}||]</marimo-tex><span class=\"paragraph\">Note <marimo-tex class=\"arithmatex\">||(\\sum_j \\tau_{nj} = 1||)</marimo-tex> for each <marimo-tex class=\"arithmatex\">||(n||)</marimo-tex>.</span>\n<h3 id=\"22-score-for-beta_j\">2.2  Score for <marimo-tex class=\"arithmatex\">||(\\beta_j||)</marimo-tex></h3>\n<marimo-tex class=\"arithmatex\">||[\\frac{\\partial\\ell}{\\partial\\beta_j}\n= \\sum_{n=1}^N \\frac{\\partial}{\\partial\\beta_j}\\log L_n\n= \\frac{1}{\\sigma^2}\\sum_{n=1}^N \\tau_{nj}\\,(y_n - X_{jn}'\\beta_j)\\,X_{jn}\n= \\mathbf{0}||]</marimo-tex><span class=\"paragraph\">Setting to zero and collecting terms gives the <strong>weighted normal equations</strong>:</span>\n<marimo-tex class=\"arithmatex\">||[\\boxed{\\bigl(X_j'\\,W_j\\,X_j\\bigr)\\,\\hat\\beta_j = X_j'\\,W_j\\,y}||]</marimo-tex><span class=\"paragraph\">where <marimo-tex class=\"arithmatex\">||(W_j = \\operatorname{diag}(\\tau_{1j},\\ldots,\\tau_{Nj})||)</marimo-tex>.</span>\n<span class=\"paragraph\">This has the same form as WLS with weights <marimo-tex class=\"arithmatex\">||(\\tau_{nj}||)</marimo-tex>.</span>\n<h3 id=\"23-score-for-sigma\">2.3  Score for <marimo-tex class=\"arithmatex\">||(\\sigma||)</marimo-tex></h3>\n<marimo-tex class=\"arithmatex\">||[\\frac{\\partial\\ell}{\\partial\\sigma}\n= \\sum_{n=1}^N\\sum_{j=0}^{R-1}\\tau_{nj}\\left[\n\\frac{(y_n-X_{jn}'\\beta_j)^2}{\\sigma^3} - \\frac{1}{\\sigma}\n\\right] = 0||]</marimo-tex><span class=\"paragraph\">Since <marimo-tex class=\"arithmatex\">||(\\sum_j\\tau_{nj}=1||)</marimo-tex>, the denominator simplifies to <marimo-tex class=\"arithmatex\">||(N||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[\\boxed{\\hat\\sigma^2 = \\frac{1}{N}\\sum_{n=1}^N\\sum_{j=0}^{R-1}\\tau_{nj}\n\\,(y_n - X_{jn}'\\hat\\beta_j)^2}||]</marimo-tex><h3 id=\"24-why-closed-form-fails\">2.4  Why Closed Form Fails</h3>\n<span class=\"paragraph\">Both <marimo-tex class=\"arithmatex\">||(\\hat\\beta_j||)</marimo-tex> and <marimo-tex class=\"arithmatex\">||(\\hat\\sigma^2||)</marimo-tex> depend on <marimo-tex class=\"arithmatex\">||(\\{\\tau_{nj}\\}||)</marimo-tex>, and\n<marimo-tex class=\"arithmatex\">||(\\tau_{nj}||)</marimo-tex> itself depends on <marimo-tex class=\"arithmatex\">||(\\hat\\beta_j||)</marimo-tex> and <marimo-tex class=\"arithmatex\">||(\\hat\\sigma^2||)</marimo-tex>.  The system\nis circular and cannot be solved analytically \u2014 this motivates the EM algorithm\nin Section 3.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "PKri",
+      "code_hash": "7a0e9ee05ad547c3bddadd2c40fe704e",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Xref",
+      "code_hash": "42aa0402a649a7f5c65892bc28351dc6",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"3-irls-as-an-em-algorithm\">3  IRLS as an EM Algorithm</h2>\n<h3 id=\"31-complete-data-log-likelihood\">3.1  Complete-Data Log-Likelihood</h3>\n<span class=\"paragraph\">Treat the true regime <marimo-tex class=\"arithmatex\">||(r_n||)</marimo-tex> as observed (complete data). Define\n<marimo-tex class=\"arithmatex\">||(\\mathbb{1}_{nj} = \\mathbb{1}(r_n = j)||)</marimo-tex>.  The complete-data log-likelihood is:</span>\n<span class=\"paragraph\">$$\\ell_c(\\boldsymbol{\\beta},\\sigma) = \\sum_{n=1}<sup>N\\sum_{j=0}</sup>{R-1}\\mathbb{1}<em>{nj}\n\\Bigl[\\log\\phi!\\left(\\tfrac{y_n - X</em>{jn}'\\beta_j}{\\sigma}\\right) - \\log\\sigma</span>\n<ul>\n<li>\\log w_n(j)\\Bigr]$$</li>\n</ul>\n<span class=\"paragraph\">The term <marimo-tex class=\"arithmatex\">||(\\log w_n(j)||)</marimo-tex> does not depend on <marimo-tex class=\"arithmatex\">||((\\boldsymbol{\\beta},\\sigma)||)</marimo-tex>, so it\ndoes not affect the M-step.</span>\n<h3 id=\"32-e-step\">3.2  E-Step</h3>\n<span class=\"paragraph\">Take the expectation of <marimo-tex class=\"arithmatex\">||(\\ell_c||)</marimo-tex> given the observed data and current parameters\n<marimo-tex class=\"arithmatex\">||(\\theta^{(t)}||)</marimo-tex>.  Since <marimo-tex class=\"arithmatex\">||(\\mathbb{1}_{nj}||)</marimo-tex> is binary and latent, its expectation\nis the posterior:</span>\n<marimo-tex class=\"arithmatex\">||[Q(\\theta\\mid\\theta^{(t)}) = E_{r\\mid y,\\tilde{r},\\theta^{(t)}}[\\ell_c]\n= \\sum_{n,j}\\tau_{nj}^{(t)}\\Bigl[\\log\\phi\\!\\left(\\tfrac{y_n-X_{jn}'\\beta_j}{\\sigma}\\right)\n-\\log\\sigma\\Bigr] + \\text{const}||]</marimo-tex><span class=\"paragraph\">where the <strong>E-step</strong> computes:</span>\n<marimo-tex class=\"arithmatex\">||[\\boxed{\\tau_{nj}^{(t)} = \\frac{\\phi((y_n-X_{jn}'\\beta_j^{(t)})/\\sigma^{(t)})\\,w_n(j)}\n{\\sum_{k}\\phi((y_n-X_{kn}'\\beta_k^{(t)})/\\sigma^{(t)})\\,w_n(k)}}||]</marimo-tex><span class=\"paragraph\">In code: <code>MLSwitchingRegIRLS._estep()</code> at line 49 of <code>irls.py</code>.</span>\n<h3 id=\"33-m-step\">3.3  M-Step</h3>\n<span class=\"paragraph\">Maximise <marimo-tex class=\"arithmatex\">||(Q||)</marimo-tex> over <marimo-tex class=\"arithmatex\">||((\\boldsymbol{\\beta},\\sigma)||)</marimo-tex>.  For <marimo-tex class=\"arithmatex\">||(\\beta_j||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[\\beta_j^{(t+1)} = \\bigl(X_j'\\,W_j^{(t)}\\,X_j\\bigr)^{-1}\\,X_j'\\,W_j^{(t)}\\,y,\n\\quad W_j^{(t)} = \\operatorname{diag}\\!\\bigl(\\tau_{1j}^{(t)},\\ldots,\\tau_{Nj}^{(t)}\\bigr)||]</marimo-tex><span class=\"paragraph\">This is a <strong>weighted least squares</strong> problem \u2014 closed form and numerically stable.\nIn code: <code>MLSwitchingRegIRLS._beta_h()</code> at line 69 of <code>irls.py</code>.</span>\n<span class=\"paragraph\">For <marimo-tex class=\"arithmatex\">||(\\sigma^2||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[\\sigma^{2,(t+1)} = \\frac{1}{N}\\sum_{n=1}^N\\sum_{j=0}^{R-1}\n\\tau_{nj}^{(t)}\\,(y_n - X_{jn}'\\beta_j^{(t+1)})^2||]</marimo-tex><span class=\"paragraph\">In code: <code>MLSwitchingRegIRLS._sigma2_h()</code> at line 77 of <code>irls.py</code>.</span>\n<h3 id=\"34-convergence-guarantee\">3.4  Convergence Guarantee</h3>\n<span class=\"paragraph\">By the EM monotonicity theorem (Dempster, Laird &amp; Rubin 1977):</span>\n<marimo-tex class=\"arithmatex\">||[\\ell(\\theta^{(t+1)}) \\geq \\ell(\\theta^{(t)}) \\qquad \\text{for all } t||]</marimo-tex><span class=\"paragraph\"><strong>Proof sketch:</strong> Using Jensen's inequality on <marimo-tex class=\"arithmatex\">||(\\log L_n||)</marimo-tex>:\n$<marimo-tex class=\"arithmatex\">||(\\log L_n(\\theta^{(t+1)}) - \\log L_n(\\theta^{(t)}) \\geq\n\\sum_j \\tau_{nj}^{(t)}\\log\\frac{L_n(\\theta^{(t+1)})}{L_n(\\theta^{(t)})} \\geq 0||)</marimo-tex>$\nwhere the last inequality follows from <marimo-tex class=\"arithmatex\">||(Q(\\theta^{(t+1)}\\mid\\theta^{(t)}) \\geq Q(\\theta^{(t)}\\mid\\theta^{(t)})||)</marimo-tex>.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "SFPL",
+      "code_hash": "5ab6c3c27b67ca6868dc4b52d8cd8eb3",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "BYtC",
+      "code_hash": "b7cfb2dfa6fb95dbf8677b40244874ad",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"4-constant-beta-restriction\">4  Constant-Beta Restriction</h2>\n<h3 id=\"41-constrained-likelihood\">4.1  Constrained Likelihood</h3>\n<span class=\"paragraph\">Impose <marimo-tex class=\"arithmatex\">||(\\beta_j = \\beta||)</marimo-tex> for all <marimo-tex class=\"arithmatex\">||(j \\in \\mathcal{R}||)</marimo-tex>\n(homogeneous treatment effect across regimes). The restricted log-likelihood is:</span>\n<marimo-tex class=\"arithmatex\">||[\\ell_{\\text{const}}(\\beta,\\sigma) = \\sum_{n=1}^N\\log\\left[\n\\sum_{j=0}^{R-1}\\frac{1}{\\sigma}\\phi\\!\\left(\\frac{y_n-X_{jn}'\\beta}{\\sigma}\\right)w_n(j)\n\\right]||]</marimo-tex><h3 id=\"42-score-and-closed-form\">4.2  Score and Closed Form</h3>\n<span class=\"paragraph\">At the E-step fixed point <marimo-tex class=\"arithmatex\">||(\\{\\tau_{nj}\\}||)</marimo-tex>, the score for <marimo-tex class=\"arithmatex\">||(\\beta||)</marimo-tex> is:</span>\n<marimo-tex class=\"arithmatex\">||[\\frac{\\partial\\ell_{\\text{const}}}{\\partial\\beta}\n= \\frac{1}{\\sigma^2}\\sum_{n=1}^N\\sum_{j=0}^{R-1}\n\\tau_{nj}\\,(y_n - X_{jn}'\\beta)\\,X_{jn} = \\mathbf{0}||]</marimo-tex><span class=\"paragraph\">Rearranging:</span>\n<marimo-tex class=\"arithmatex\">||[\\left(\\sum_{j=0}^{R-1} X_j'\\,W_j\\,X_j\\right)\\beta =\n\\sum_{j=0}^{R-1} X_j'\\,W_j\\,y||]</marimo-tex><span class=\"paragraph\">With <marimo-tex class=\"arithmatex\">||(A_j = X_j'\\,W_j\\,X_j||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[\\boxed{\\hat\\beta_{\\text{const}} = \\left(\\sum_j A_j\\right)^{-1}\\sum_j A_j\\,\\hat\\beta_j^{\\text{regime}}}||]</marimo-tex><span class=\"paragraph\">This is a <strong>precision-weighted average</strong> of the regime-specific MLE estimates.</span>\n<h3 id=\"43-special-case-common-design-matrix\">4.3  Special Case: Common Design Matrix</h3>\n<span class=\"paragraph\">When all regimes share the same design matrix <marimo-tex class=\"arithmatex\">||(X_j = X||)</marimo-tex>, the expression simplifies\nexactly to <strong>pooled OLS</strong>. Since <marimo-tex class=\"arithmatex\">||(\\sum_j \\tau_{nj} = 1||)</marimo-tex> implies <marimo-tex class=\"arithmatex\">||(\\sum_j W_j = I_N||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[\\sum_j A_j = \\sum_j X'W_jX = X'\\!\\left(\\sum_j W_j\\right)\\!X = X'X,\n\\quad \\sum_j A_j\\hat\\beta_j = \\sum_j X'W_jy = X'y||]</marimo-tex><span class=\"paragraph\">Therefore:</span>\n<marimo-tex class=\"arithmatex\">||[\\boxed{\\hat\\beta_{\\text{const}} = (X'X)^{-1}X'y = \\hat\\beta_{\\text{pooled OLS}}}||]</marimo-tex><span class=\"paragraph\">The simpler sample-weighted formula is an approximation valid when <marimo-tex class=\"arithmatex\">||(A_j \\approx n_j^{\\text{eff}} \\cdot X'X/N||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[\\hat\\beta_{\\text{const}} \\approx\n\\frac{\\displaystyle\\sum_{j=0}^{R-1} n_j^{\\text{eff}}\\,\\hat\\beta_j^{\\text{regime}}}\n{\\displaystyle\\sum_{j=0}^{R-1} n_j^{\\text{eff}}},\n\\quad n_j^{\\text{eff}} = \\sum_{n=1}^N\\tau_{nj}||]</marimo-tex><span class=\"paragraph\">with discrepancy of order <marimo-tex class=\"arithmatex\">||(10^{-5}||)</marimo-tex> in practice.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "RGSE",
+      "code_hash": "44955258be2786cfa9cca2dd82fc3873",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Kclp",
+      "code_hash": "b3e3f77ac0bea0781a85a046c72d05c1",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"5-ols-bias-under-misclassification\">5  OLS Bias Under Misclassification</h2>\n<h3 id=\"51-setup-naive-ols\">5.1  Setup: Naive OLS</h3>\n<span class=\"paragraph\">Suppose the econometrician uses the <strong>predicted</strong> regime <marimo-tex class=\"arithmatex\">||(\\tilde{r}_n||)</marimo-tex> to assign\neach observation to a regime covariate, then runs OLS separately for each predicted\nregime <marimo-tex class=\"arithmatex\">||(j||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[\\hat\\beta_j^{\\text{OLS}} = \\left(\\sum_{n:\\tilde{r}_n=j}X_{jn}X_{jn}'\\right)^{-1}\n\\sum_{n:\\tilde{r}_n=j}X_{jn}\\,y_n||]</marimo-tex><h3 id=\"52-probability-limit\">5.2  Probability Limit</h3>\n<span class=\"paragraph\">Using the law of total expectation and\n<marimo-tex class=\"arithmatex\">||(P(r_n = k \\mid \\tilde{r}_n = j) = \\pi_{kj}||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[E[y_n \\mid \\tilde{r}_n = j] = \\sum_{k=0}^{R-1}\\pi_{kj}\\,X_{kn}'\\beta_k||]</marimo-tex><span class=\"paragraph\">The probability limit of the slope coefficient <marimo-tex class=\"arithmatex\">||(\\hat\\beta_{1j}^{\\text{OLS}}||)</marimo-tex> is:</span>\n<span class=\"paragraph\">$$\\operatorname{plim}\\,\\hat\\beta_{1j}^{\\text{OLS}}\n= \\frac{\\operatorname{Cov}(y,\\, d_j \\mid \\tilde{r}=j)}{\\operatorname{Var}(d_j)}\n= \\frac{\\pi_{jj}\\operatorname{Var}(d_j)\\beta_{1j}</span>\n<ul>\n<li>\\displaystyle\\sum_{k\\neq j}\\pi_{kj}\\operatorname{Cov}(d_k,d_j)\\beta_{1k}}\n{\\operatorname{Var}(d_j)}$$</li>\n</ul>\n<h3 id=\"53-equicorrelated-shocks\">5.3  Equicorrelated Shocks</h3>\n<span class=\"paragraph\">Assume all inter-region correlations equal <marimo-tex class=\"arithmatex\">||(\\rho||)</marimo-tex> and equal variances <marimo-tex class=\"arithmatex\">||(\\sigma_d^2||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[\\boxed{\\operatorname{plim}\\,\\hat\\beta_{1j}^{\\text{OLS}}\n= \\pi_{jj}\\,\\beta_{1j} + (1-\\pi_{jj})\\,\\rho\\,\\bar\\beta_{-j}}||]</marimo-tex><span class=\"paragraph\">where <marimo-tex class=\"arithmatex\">||(\\bar\\beta_{-j} = \\frac{1}{R-1}\\sum_{k\\neq j}\\beta_{1k}||)</marimo-tex>\nand we used <marimo-tex class=\"arithmatex\">||(1-\\pi_{jj} = \\sum_{k\\neq j}\\pi_{kj}||)</marimo-tex>.</span>\n<span class=\"paragraph\">The <strong>bias</strong> is:</span>\n<span class=\"paragraph\">$$\\operatorname{Bias}<em>j = (1-\\pi</em>{jj})\\rho\\,\\bar\\beta_{-j}</span>\n<ul>\n<li>(\\pi_{jj}-1)\\beta_{1j} = (1-\\pi_{jj})\\rho(\\bar\\beta_{-j} - \\beta_{1j})</li>\n<li>(1-\\pi_{jj})(1-\\rho)(-\\beta_{1j})$$</li>\n</ul>\n<span class=\"paragraph\">Simplifying:</span>\n<span class=\"paragraph\">$$\\operatorname{Bias}<em>j = (1-\\pi</em>{jj})\\bigl[\\rho\\,\\bar\\beta_{-j}</span>\n<ul>\n<li>\\beta_{1j}\\bigr] + \\pi_{jj}\\beta_{1j} - \\beta_{1j}$$</li>\n</ul>\n<span class=\"paragraph\">Or more directly:</span>\n<marimo-tex class=\"arithmatex\">||[\\operatorname{Bias}_j = \\underbrace{(1-\\pi_{jj})(\\rho\\,\\bar\\beta_{-j} - \\beta_{1j})}_{\\text{misclass. + contamination}}||]</marimo-tex><h3 id=\"54-limiting-cases\">5.4  Limiting Cases</h3>\n<table>\n<thead>\n<tr>\n<th>Case</th>\n<th>Bias</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><marimo-tex class=\"arithmatex\">||(\\rho = 0||)</marimo-tex></td>\n<td><marimo-tex class=\"arithmatex\">||(-(1-\\pi_{jj})\\beta_{1j}||)</marimo-tex> \u2014 pure attenuation</td>\n</tr>\n<tr>\n<td><marimo-tex class=\"arithmatex\">||(\\rho = 1||)</marimo-tex></td>\n<td><marimo-tex class=\"arithmatex\">||((1-\\pi_{jj})(\\bar\\beta_{-j} - \\beta_{1j})||)</marimo-tex> \u2014 max contamination</td>\n</tr>\n<tr>\n<td><marimo-tex class=\"arithmatex\">||(\\Pi \\to \\frac{1}{R}\\mathbf{1}\\mathbf{1}'||)</marimo-tex></td>\n<td>All estimates collapse to <marimo-tex class=\"arithmatex\">||(\\rho\\bar\\beta_{\\text{all}}||)</marimo-tex></td>\n</tr>\n<tr>\n<td><marimo-tex class=\"arithmatex\">||(\\pi_{jj} = 1||)</marimo-tex></td>\n<td><marimo-tex class=\"arithmatex\">||(0||)</marimo-tex> \u2014 no misclassification, no bias</td>\n</tr>\n</tbody>\n</table>\n<span class=\"paragraph\"><strong>Key insight:</strong> When shocks are uncorrelated (<marimo-tex class=\"arithmatex\">||(\\rho = 0||)</marimo-tex>), the slope estimator\nsuffers only from attenuation (multiplied by <marimo-tex class=\"arithmatex\">||(\\pi_{jj}||)</marimo-tex>), not cross-regime contamination.\nWhen shocks are highly correlated, misclassification severely contaminates estimates.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "emfo",
+      "code_hash": "030be876c52b2d1bddec35c4a5e4c4e1",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Hstk",
+      "code_hash": "91aa2ca5c863366db7f5434d240092e6",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"6-sigma-bias-under-misclassification\">6  Sigma Bias Under Misclassification</h2>\n<h3 id=\"61-ols-residual-variance-is-inflated\">6.1  OLS Residual Variance is Inflated</h3>\n<span class=\"paragraph\">Under misclassification, the naive OLS residuals mix true regime residuals\n<marimo-tex class=\"arithmatex\">||(\\varepsilon_{it} = y_{it} - X_{r_i,t}'\\beta_{r_i}||)</marimo-tex> with <strong>covariate mismatch</strong>\n<marimo-tex class=\"arithmatex\">||((X_{r_i,t} - X_{\\tilde{r}_i,t})'\\beta_{r_i}||)</marimo-tex>, inflating the estimated variance.</span>\n<span class=\"paragraph\">For a subsample predicted as regime <marimo-tex class=\"arithmatex\">||(j||)</marimo-tex>:</span>\n<marimo-tex class=\"arithmatex\">||[E[\\hat\\sigma_j^{2,\\text{OLS}}] = \\sigma^2 + \\sum_{k=0}^{R-1}\\pi_{kj}\n\\bigl(\\beta_k - \\hat\\beta_j^{\\text{OLS}}\\bigr)'\\,E[X_k X_k']\\,\n\\bigl(\\beta_k - \\hat\\beta_j^{\\text{OLS}}\\bigr) \\geq \\sigma^2||]</marimo-tex><span class=\"paragraph\">The second term is non-negative (a sum of quadratic forms), and grows with:</span>\n<ul>\n<li><strong>Misclassification severity:</strong> as <marimo-tex class=\"arithmatex\">||(\\pi_{jj} \\to 1/R||)</marimo-tex>, contaminating <marimo-tex class=\"arithmatex\">||(\\beta_k||)</marimo-tex>'s\n  enter with weight <marimo-tex class=\"arithmatex\">||(1/R||)</marimo-tex></li>\n<li><strong>Regime heterogeneity:</strong> larger <marimo-tex class=\"arithmatex\">||(\\|\\beta_k - \\beta_j\\|||)</marimo-tex> increases the term</li>\n</ul>\n<h3 id=\"62-mle-consistency\">6.2  MLE Consistency</h3>\n<span class=\"paragraph\">The MLE sigma estimator is:</span>\n<marimo-tex class=\"arithmatex\">||[\\hat\\sigma^2_{\\text{MLE}} = \\frac{1}{N}\\sum_{n,j}\\hat\\tau_{nj}\n(y_n - X_{jn}'\\hat\\beta_j)^2||]</marimo-tex><span class=\"paragraph\">When the confusion matrix <marimo-tex class=\"arithmatex\">||(\\boldsymbol{\\Pi}||)</marimo-tex> is <strong>correctly specified</strong>, the\nposterior weights <marimo-tex class=\"arithmatex\">||(\\hat\\tau_{nj}||)</marimo-tex> converge to the true regime posteriors, and\n<marimo-tex class=\"arithmatex\">||(\\hat\\sigma^2_{\\text{MLE}} \\xrightarrow{p} \\sigma^2||)</marimo-tex>.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "nWHF",
+      "code_hash": "0a4acb95a622ea8f4832541513ff44f3",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "iLit",
+      "code_hash": "a881a74c288f19545c39f027773d598b",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"7-multi-regime-scaling\">7  Multi-Regime Scaling</h2>\n<h3 id=\"71-symmetric-confusion-matrix\">7.1  Symmetric Confusion Matrix</h3>\n<span class=\"paragraph\">For a symmetric confusion matrix with equal diagonal entries:</span>\n<marimo-tex class=\"arithmatex\">||[\\pi_{kj} = \\begin{cases}\\pi_{jj} &amp; k = j \\\\ \\dfrac{1-\\pi_{jj}}{R-1} &amp; k \\neq j\\end{cases}||]</marimo-tex><span class=\"paragraph\">The analytic plim for the equicorrelated case becomes:</span>\n<marimo-tex class=\"arithmatex\">||[\\operatorname{plim}\\,\\hat\\beta_{1j}^{\\text{OLS}}\n= \\pi_{jj}\\beta_{1j} + \\frac{1-\\pi_{jj}}{R-1}\\rho\\sum_{k\\neq j}\\beta_{1k}\n= \\pi_{jj}\\beta_{1j} + (1-\\pi_{jj})\\rho\\bar\\beta_{-j}||]</marimo-tex><span class=\"paragraph\"><strong>Observation:</strong> The bias formula <marimo-tex class=\"arithmatex\">||((1-\\pi_{jj})\\rho(\\bar\\beta_{-j}-\\beta_{1j})||)</marimo-tex>\ndoes not explicitly depend on <marimo-tex class=\"arithmatex\">||(R||)</marimo-tex> when <marimo-tex class=\"arithmatex\">||(\\pi_{jj}||)</marimo-tex> is held fixed.  Each individual\ncontaminant contributes less as <marimo-tex class=\"arithmatex\">||(R||)</marimo-tex> grows (<marimo-tex class=\"arithmatex\">||(\\pi_{kj} \\propto 1/(R-1)||)</marimo-tex>), but there\nare <marimo-tex class=\"arithmatex\">||(R-1||)</marimo-tex> of them and they average to <marimo-tex class=\"arithmatex\">||(\\bar\\beta_{-j}||)</marimo-tex>.</span>\n<h3 id=\"72-what-does-scale-with-r\">7.2  What Does Scale with R</h3>\n<ol>\n<li><strong>Identification difficulty:</strong> With <marimo-tex class=\"arithmatex\">||(R \\cdot p||)</marimo-tex> beta parameters to estimate,\n   the effective sample per regime is <marimo-tex class=\"arithmatex\">||(N/R||)</marimo-tex> (balanced case), so\n   <marimo-tex class=\"arithmatex\">||(\\operatorname{Var}(\\hat\\beta_j) \\propto R/N||)</marimo-tex>.</li>\n<li><strong>Noisify parameterisation:</strong> With <code>noisify</code> and fixed <code>weight</code>,\n   <marimo-tex class=\"arithmatex\">||(\\pi_{jj} = 1 - \\text{weight}\\cdot(1-1/R)||)</marimo-tex>.  As <marimo-tex class=\"arithmatex\">||(R\\to\\infty||)</marimo-tex>,\n   <marimo-tex class=\"arithmatex\">||(\\pi_{jj} \\to 1-\\text{weight}||)</marimo-tex> \u2014 the diagonal is lower-bounded.</li>\n<li><strong>Bias grows with heterogeneity:</strong> More regimes with more diverse <marimo-tex class=\"arithmatex\">||(\\beta_k||)</marimo-tex>'s\n   means the contaminating term <marimo-tex class=\"arithmatex\">||(\\bar\\beta_{-j}||)</marimo-tex> differs more from <marimo-tex class=\"arithmatex\">||(\\beta_{1j}||)</marimo-tex>.</li>\n</ol></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "ZHCJ",
+      "code_hash": "113d88399b5ac0e9bc3e9468e8f815bb",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "ROlb",
+      "code_hash": "786b7d6207bfa562dd5b52ed73a02b4a",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"8-correlated-shocks-the-key-interaction\">8  Correlated Shocks: The Key Interaction</h2>\n<h3 id=\"81-general-formula\">8.1  General Formula</h3>\n<span class=\"paragraph\">With heterogeneous correlations <marimo-tex class=\"arithmatex\">||(\\rho_{kj} = \\operatorname{Corr}(d_k, d_j)||)</marimo-tex>\nand (potentially different) variances <marimo-tex class=\"arithmatex\">||(\\sigma_k^2||)</marimo-tex>, the full expression for the\nOLS probability limit is:</span>\n<span class=\"paragraph\">$$\\operatorname{plim}\\,\\hat\\beta_{1j}^{\\text{OLS}}\n= \\frac{\\displaystyle\\pi_{jj}\\operatorname{Var}(d_j)\\beta_{1j}</span>\n<ul>\n<li>\\sum_{k\\neq j}\\pi_{kj}\\,\\rho_{kj}\\,\\sigma_k\\,\\sigma_j\\,\\beta_{1k}}\n{\\operatorname{Var}(d_j)}\n= \\pi_{jj}\\beta_{1j} + \\sum_{k\\neq j}\\pi_{kj}\\,\\rho_{kj}\\,\n\\frac{\\sigma_k}{\\sigma_j}\\,\\beta_{1k}$$</li>\n</ul>\n<h3 id=\"82-equicorrelated-special-case\">8.2  Equicorrelated Special Case</h3>\n<span class=\"paragraph\">With equal variances (<marimo-tex class=\"arithmatex\">||(\\sigma_k = \\sigma_j \\equiv \\sigma_d||)</marimo-tex>) and equal\noff-diagonal correlations:</span>\n<marimo-tex class=\"arithmatex\">||[\\boxed{\\operatorname{plim}\\,\\hat\\beta_{1j}^{\\text{OLS}}\n= \\pi_{jj}\\beta_{1j} + (1-\\pi_{jj})\\,\\rho\\,\\bar\\beta_{-j}}||]</marimo-tex><span class=\"paragraph\"><strong>Signed bias:</strong></span>\n<marimo-tex class=\"arithmatex\">||[\\operatorname{Bias}_j = \\operatorname{plim}\\,\\hat\\beta_{1j}^{\\text{OLS}} - \\beta_{1j}\n= (1-\\pi_{jj})\\bigl[\\rho\\,\\bar\\beta_{-j} - \\beta_{1j}\\bigr]||]</marimo-tex><h3 id=\"83-three-regimes-of-the-correlation\">8.3  Three Regimes of the Correlation</h3>\n<table>\n<thead>\n<tr>\n<th>Correlation</th>\n<th>Bias mechanism</th>\n<th>Direction</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><marimo-tex class=\"arithmatex\">||(\\rho = 0||)</marimo-tex></td>\n<td>Pure attenuation: <marimo-tex class=\"arithmatex\">||(-(1-\\pi_{jj})\\beta_{1j}||)</marimo-tex></td>\n<td>Toward 0</td>\n</tr>\n<tr>\n<td><marimo-tex class=\"arithmatex\">||(0 &lt; \\rho &lt; 1||)</marimo-tex></td>\n<td>Attenuation + contamination</td>\n<td>Depends on sign of <marimo-tex class=\"arithmatex\">||(\\bar\\beta_{-j}||)</marimo-tex></td>\n</tr>\n<tr>\n<td><marimo-tex class=\"arithmatex\">||(\\rho = 1||)</marimo-tex></td>\n<td>Pure contamination: <marimo-tex class=\"arithmatex\">||((1-\\pi_{jj})(\\bar\\beta_{-j}-\\beta_{1j})||)</marimo-tex></td>\n<td>Toward <marimo-tex class=\"arithmatex\">||(\\bar\\beta||)</marimo-tex></td>\n</tr>\n<tr>\n<td><marimo-tex class=\"arithmatex\">||(\\rho &lt; 0||)</marimo-tex></td>\n<td>Contamination with reversed sign</td>\n<td>Can flip sign</td>\n</tr>\n</tbody>\n</table>\n<span class=\"paragraph\"><strong>Policy implication:</strong> In the Uganda Uber setting, weather shocks across nearby\nregions are positively correlated (correlation coefficient 0.3\u20130.8 from the paper).\nThis means naive OLS estimates are not only attenuated \u2014 they are contaminated by\nother regions' shock responses, precisely the case where the switching regression\ncorrection is most valuable.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "qnkX",
+      "code_hash": "54d65a7e91ab2295f775f2914d19e97c",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "TqIu",
+      "code_hash": "846f0b7340b0781939698eea79a0bff1",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h2 id=\"summary-of-key-results\">Summary of Key Results</h2>\n<table>\n<thead>\n<tr>\n<th>Result</th>\n<th>Expression</th>\n<th>Condition</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>MLE score (\u03b2)</td>\n<td><marimo-tex class=\"arithmatex\">||((X_j'W_jX_j)\\hat\\beta_j = X_j'W_jy||)</marimo-tex></td>\n<td>EM fixed point</td>\n</tr>\n<tr>\n<td>MLE score (\u03c3)</td>\n<td><marimo-tex class=\"arithmatex\">||(\\hat\\sigma^2 = N^{-1}\\sum_{n,j}\\tau_{nj}(y_n-X_{jn}'\\hat\\beta_j)^2||)</marimo-tex></td>\n<td>EM fixed point</td>\n</tr>\n<tr>\n<td>EM M-step</td>\n<td>WLS per regime: <marimo-tex class=\"arithmatex\">||((X_j'W_j^{(t)}X_j)\\beta_j^{(t+1)} = X_j'W_j^{(t)}y||)</marimo-tex></td>\n<td>Closed form</td>\n</tr>\n<tr>\n<td>Constant \u03b2</td>\n<td><marimo-tex class=\"arithmatex\">||(({\\sum_j A_j})^{-1}\\sum_j A_j\\beta_j||)</marimo-tex> precision-weighted average</td>\n<td>Common X: simple mean</td>\n</tr>\n<tr>\n<td>OLS plim (slope)</td>\n<td><marimo-tex class=\"arithmatex\">||(\\pi_{jj}\\beta_{1j} + (1-\\pi_{jj})\\rho\\bar\\beta_{-j}||)</marimo-tex></td>\n<td>Equicorrelated shocks</td>\n</tr>\n<tr>\n<td>OLS bias</td>\n<td><marimo-tex class=\"arithmatex\">||((1-\\pi_{jj})[\\rho\\bar\\beta_{-j} - \\beta_{1j}]||)</marimo-tex></td>\n<td>Attenuation <marimo-tex class=\"arithmatex\">||(-(1-\\pi_{jj})\\beta_{1j}||)</marimo-tex> when \u03c1=0; vanishes only when \u03c0_{jj}=1</td>\n</tr>\n<tr>\n<td>\u03c3 bias</td>\n<td><marimo-tex class=\"arithmatex\">||(E[\\hat\\sigma^2_{\\text{OLS}}] \\geq \\sigma^2||)</marimo-tex></td>\n<td>Always upward biased</td>\n</tr>\n</tbody>\n</table>\n<h3 id=\"implications-for-the-paper\">Implications for the Paper</h3>\n<ol>\n<li><strong>The EM algorithm is the natural estimator</strong> \u2014 the score equations are exactly\n   the EM fixed-point conditions, so the IRLS algorithm converges to the MLE.</li>\n<li><strong>Shock correlation is a crucial moderator</strong> \u2014 the <em>contamination</em> component\n   of slope bias is proportional to <marimo-tex class=\"arithmatex\">||(\\rho||)</marimo-tex>, but an <em>attenuation</em> component\n   <marimo-tex class=\"arithmatex\">||(-(1-\\pi_{jj})\\beta_{1j}||)</marimo-tex> persists even at <marimo-tex class=\"arithmatex\">||(\\rho = 0||)</marimo-tex> (misclassified observations\n   dilute the effective sample, shrinking the slope toward zero regardless of shock\n   correlation). In the Uganda setting with <marimo-tex class=\"arithmatex\">||(\\rho \\in [0.3, 0.8]||)</marimo-tex>, both attenuation\n   and contamination are operative.</li>\n<li><strong>No canned library can implement this</strong> \u2014 standard mixture model software\n   (<code>sklearn.GaussianMixture</code>, <code>statsmodels MarkovRegression</code>) estimates mixing\n   weights as parameters. Our estimator uses externally determined, observation-specific\n   weights from the confusion matrix \u2014 a fundamentally different structure.</li>\n<li><strong>The MLE is consistent</strong> \u2014 as long as the confusion matrix is correctly\n   specified, <marimo-tex class=\"arithmatex\">||(\\hat\\beta_j \\xrightarrow{p} \\beta_j||)</marimo-tex> and\n   <marimo-tex class=\"arithmatex\">||(\\hat\\sigma^2 \\xrightarrow{p} \\sigma^2||)</marimo-tex>.</li>\n</ol></span>"
+          }
+        }
+      ],
+      "console": []
+    }
+  ]
+}
