@@ -84,9 +84,10 @@ def _(MLSwitchingRegIRLS, contextlib, io, np, pd):
                 b0[r] = np.linalg.lstsq(Xl[r][mask], y[mask], rcond=None)[0]
         mod = MLSwitchingRegIRLS(y, Xl, cp, cm)
         with contextlib.redirect_stdout(io.StringIO()):
-            beta, s2 = mod.fit(beta_0=b0, sigma2_0=float(np.var(y)), tol=1e-7, max_iter=500)
+            beta, s2 = mod.fit(
+                beta_0=b0, sigma2_0=float(np.var(y)), tol=1e-7, max_iter=500
+            )
         return beta, float(np.sqrt(max(s2, 1e-10)))
-
 
     def make_true(R):
         """Generate fixed true parameters for R regimes."""
@@ -94,7 +95,6 @@ def _(MLSwitchingRegIRLS, contextlib, io, np, pd):
         beta1 = [float(-1.5 + r) for r in range(R)]
         sd = [1.0] * R
         return beta0, beta1, sd
-
 
     def simulate_grid(
         grid_param,
@@ -125,9 +125,13 @@ def _(MLSwitchingRegIRLS, contextlib, io, np, pd):
                     drivers=drv, time_periods=prd, regimes=R, seed=seed_base + sim
                 )
                 df, mw = u.construct(
-                    seed=seed_base + sim, beta0=beta0, beta1=beta1, y_sd=sd, weight=weight
+                    seed=seed_base + sim,
+                    beta0=beta0,
+                    beta1=beta1,
+                    y_sd=sd,
+                    weight=weight,
                 )
-                y, Xl, cp, cm = extract_estimator_inputs(df, mw, R)
+                y, Xl, cp, cm, _ = extract_estimator_inputs(df, mw, R)
                 try:
                     beta_hat, _ = run_irls(y, Xl, cp, cm)
                     row = {grid_param: val, "sim": sim, "NT": drv * prd}
@@ -176,7 +180,7 @@ def _(
             _df, _mw = _u.construct(
                 seed=8000 + _sim, beta0=_b0, beta1=_b1, y_sd=_sd, weight=0.99
             )
-            _y, _Xl, _cp, _cm = extract_estimator_inputs(_df, _mw, _R)
+            _y, _Xl, _cp, _cm, _ = extract_estimator_inputs(_df, _mw, _R)
             try:
                 _beta, _ = run_irls(_y, _Xl, _cp, _cm)
                 _r = {}
@@ -249,7 +253,9 @@ def _(df_sec_a, mo, np, plt, rc_bias, rc_rmse, true_a):
     _fig_a, _axes_a = plt.subplots(2, _R, figsize=(12, 7))
 
     for _r in range(_R):
-        for _row, (_ptype, _true_vals) in enumerate([("beta0", _b0_a), ("beta1", _b1_a)]):
+        for _row, (_ptype, _true_vals) in enumerate(
+            [("beta0", _b0_a), ("beta1", _b1_a)]
+        ):
             _pk = f"{_ptype}_{_r}"
             _true_v = _true_vals[_r]
             _bias_v, _rmse_v = [], []
@@ -325,10 +331,12 @@ def _(df_sec_a, mo, np, plt, rc_bias, rc_rmse, true_a):
 
     _fig_b, _axes_b = plt.subplots(2, 2, figsize=(10, 7))
 
-    for _col, (_ptype, _true_vals, _sym) in enumerate([
-        ("beta0", _b0_a, "β₀"),
-        ("beta1", _b1_a, "β₁"),
-    ]):
+    for _col, (_ptype, _true_vals, _sym) in enumerate(
+        [
+            ("beta0", _b0_a, "β₀"),
+            ("beta1", _b1_a, "β₁"),
+        ]
+    ):
         for _row, _ylabel in enumerate(["Bias", "RMSE"]):
             _ax = _axes_b[_row, _col]
             for _r in range(_R):
@@ -427,10 +435,12 @@ def _(df_sec_c, mo, np, plt, rc_bias, rc_rmse, true_c):
 
     _fig_c, _axes_c = plt.subplots(2, 2, figsize=(10, 7))
 
-    for _col, (_ptype, _true_vals, _sym) in enumerate([
-        ("beta0", _b0_c, "β₀"),
-        ("beta1", _b1_c, "β₁"),
-    ]):
+    for _col, (_ptype, _true_vals, _sym) in enumerate(
+        [
+            ("beta0", _b0_c, "β₀"),
+            ("beta1", _b1_c, "β₁"),
+        ]
+    ):
         for _row, _ylabel in enumerate(["Bias", "RMSE"]):
             _ax = _axes_c[_row, _col]
             for _r in range(_R):
@@ -523,7 +533,7 @@ def _(
                 _df, _mw = _u.construct(
                     seed=30000 + _sim, beta0=_b0, beta1=_b1, y_sd=_sd, weight=_w
                 )
-                _y, _Xl, _cp, _cm = extract_estimator_inputs(_df, _mw, _R)
+                _y, _Xl, _cp, _cm, _ = extract_estimator_inputs(_df, _mw, _R)
                 try:
                     _beta, _ = run_irls(_y, _Xl, _cp, _cm)
                     _row = {"weight": _w}
@@ -567,7 +577,9 @@ def _(df_d, mo, np, plt, true_d):
                     _rmses = [
                         float(
                             np.sqrt(
-                                np.mean((_grp[f"{_ptype}_{r}"].values - _true_vals[r]) ** 2)
+                                np.mean(
+                                    (_grp[f"{_ptype}_{r}"].values - _true_vals[r]) ** 2
+                                )
                             )
                         )
                         for r in range(_R)

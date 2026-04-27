@@ -1,6 +1,78 @@
 import numpy as np
 import numpy.linalg
 
+
+def cm_to_weight(cm, regime_freq=None):
+    """Calibrate the simulation ``weight`` parameter from an empirical confusion matrix.
+
+    The simulation's misclassification model sets::
+
+        P(correct | true regime r) = 1 - weight * (1 - 1/R)
+
+    This function inverts that relationship: given a confusion matrix it
+    returns the ``weight`` value that reproduces the observed accuracy.
+
+    Parameters
+    ----------
+    cm : array-like of shape (R, R)
+        Confusion matrix in **project convention**: ``cm[i, j]`` =
+        P(predicted=i | true=j), i.e. columns sum to 1 (or to raw counts per
+        true class).  This matches ``cm_4``/``cm_10`` from ``ml_switching_reg.cm``
+        and the column-normalised matrices used throughout the codebase.
+        (If you have a scikit-learn confusion matrix where rows = true class,
+        pass ``cm.T``.)
+    regime_freq : array-like of shape (R,), optional
+        Weights for averaging per-regime accuracy.  Defaults to equal weights.
+        Pass the empirical regime frequencies (e.g. class sizes) for a
+        frequency-weighted average.
+
+    Returns
+    -------
+    weight : float in [0, 1]
+        Calibrated misclassification weight.
+    info : dict
+        ``per_regime_accuracy`` — P(correct | true regime r) for each r.
+        ``mean_accuracy``       — (weighted) average accuracy.
+        ``R``                   — number of regimes.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from ml_switching_reg.cm import cm_4
+    >>> weight, info = cm_to_weight(cm_4)   # no .T needed
+    """
+    cm = np.asarray(cm, dtype=float)
+    R = cm.shape[0]
+    if cm.shape != (R, R):
+        raise ValueError(f"cm must be square; got shape {cm.shape}")
+
+    # Column-normalise: cm[:, j] = P(predicted | true=j), diagonal = P(correct | true=r)
+    col_sums = cm.sum(axis=0, keepdims=True)
+    if np.any(col_sums == 0):
+        raise ValueError("One or more true-class columns sum to zero.")
+    cm_norm = cm / col_sums
+
+    per_regime_acc = np.diag(cm_norm)  # P(correct | true=r) for each r
+
+    if regime_freq is None:
+        regime_freq = np.ones(R) / R
+    else:
+        regime_freq = np.asarray(regime_freq, dtype=float)
+        regime_freq = regime_freq / regime_freq.sum()
+
+    mean_acc = float(per_regime_acc @ regime_freq)
+
+    # Invert: mean_acc = 1 - weight * (1 - 1/R)
+    weight = (1.0 - mean_acc) / (1.0 - 1.0 / R)
+    weight = float(np.clip(weight, 0.0, 1.0))
+
+    info = {
+        "per_regime_accuracy": per_regime_acc,
+        "mean_accuracy": mean_acc,
+        "R": R,
+    }
+    return weight, info
+
 def lagged_drought_df(data=None, drought_cols=None, shift=None, dropna=False, groupby_index=['hashed_driver_uuid'], date_col= None, assign_only=False):
     
     if shift is None:

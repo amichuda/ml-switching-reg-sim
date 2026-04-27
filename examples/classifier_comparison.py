@@ -94,7 +94,13 @@ def _():
     B1 = [-1.5, 2.0]
     SD = [1.0, 1.0]
     N_SIM = 50
-    TRUE = {"beta0_0": 1.0, "beta1_0": -1.5, "beta0_1": 3.0, "beta1_1": 2.0, "sigma": 1.0}
+    TRUE = {
+        "beta0_0": 1.0,
+        "beta1_0": -1.5,
+        "beta0_1": 3.0,
+        "beta1_1": 2.0,
+        "sigma": 1.0,
+    }
     PARAMS = ["beta0_0", "beta1_0", "beta0_1", "beta1_1"]
     LABELS = {
         "beta0_0": "β₀ reg 0",
@@ -125,7 +131,9 @@ def _(MLSwitchingRegIRLS, contextlib, io, np):
                 b0[r] = np.linalg.lstsq(Xl[r][mask], y[mask], rcond=None)[0]
         mod = MLSwitchingRegIRLS(y, Xl, cp, cm)
         with contextlib.redirect_stdout(io.StringIO()):
-            beta, s2 = mod.fit(beta_0=b0, sigma2_0=float(np.var(y)), tol=1e-7, max_iter=500)
+            beta, s2 = mod.fit(
+                beta_0=b0, sigma2_0=float(np.var(y)), tol=1e-7, max_iter=500
+            )
         return {
             "beta0_0": float(beta[0, 0]),
             "beta1_0": float(beta[0, 1]),
@@ -170,8 +178,10 @@ def _(
         _u = UberDatasetCreatorHet(
             drivers=DRIVERS, time_periods=PERIODS, regimes=REGIMES, seed=9000 + _sim
         )
-        _df, _mw = _u.construct(seed=9000 + _sim, beta0=B0, beta1=B1, y_sd=SD, weight=0.99)
-        _y, _Xl, _cp, _cm = extract_estimator_inputs(_df, _mw, REGIMES)
+        _df, _mw = _u.construct(
+            seed=9000 + _sim, beta0=B0, beta1=B1, y_sd=SD, weight=0.99
+        )
+        _y, _Xl, _cp, _cm, _ = extract_estimator_inputs(_df, _mw, REGIMES)
         _r = run_irls(_y, _Xl, _cp, _cm)
         _rows_rc.append(_r)
 
@@ -180,8 +190,12 @@ def _(
     random_chance_rmse = {
         p: float(np.sqrt(np.mean((df_rc[p].values - TRUE[p]) ** 2))) for p in PARAMS
     }
-    print("Random-chance bias:", {k: round(v, 3) for k, v in random_chance_bias.items()})
-    print("Random-chance RMSE:", {k: round(v, 3) for k, v in random_chance_rmse.items()})
+    print(
+        "Random-chance bias:", {k: round(v, 3) for k, v in random_chance_bias.items()}
+    )
+    print(
+        "Random-chance RMSE:", {k: round(v, 3) for k, v in random_chance_rmse.items()}
+    )
     df_rc, random_chance_bias, random_chance_rmse
     return
 
@@ -223,7 +237,7 @@ def _(
             _df, _mw = _u.construct(
                 seed=1000 + _sim, beta0=B0, beta1=B1, y_sd=SD, weight=_w
             )
-            _y, _Xl, _cp, _cm = extract_estimator_inputs(_df, _mw, REGIMES)
+            _y, _Xl, _cp, _cm, _ = extract_estimator_inputs(_df, _mw, REGIMES)
             _r = run_irls(_y, _Xl, _cp, _cm)
             _r["weight"] = _w
             _rows_a.append(_r)
@@ -330,7 +344,7 @@ def _(
                 classifier_mode="ml",
                 noise_scale=_ns,
             )
-            _r = run_irls(*extract_estimator_inputs(_df, _mw, REGIMES))
+            _r = run_irls(*extract_estimator_inputs(_df, _mw, REGIMES)[:4])
             _r["noise_scale"] = _ns
             _r["p_correct"] = float(np.diag(_mw).mean())
             _rows_b.append(_r)
@@ -441,7 +455,8 @@ def _(LABELS, PARAMS, TRUE, df_a, df_b, mo, np, plt):
         # ml: p_correct from data
         _ns_vals_b = sorted(df_b["noise_scale"].unique())
         _pc_b = [
-            float(df_b[df_b["noise_scale"] == ns]["p_correct"].mean()) for ns in _ns_vals_b
+            float(df_b[df_b["noise_scale"] == ns]["p_correct"].mean())
+            for ns in _ns_vals_b
         ]
         _bias_b, _rmse_b = [], []
         for _ns in _ns_vals_b:
@@ -449,10 +464,12 @@ def _(LABELS, PARAMS, TRUE, df_a, df_b, mo, np, plt):
             _bias_b.append(float(np.mean(_v) - TRUE[_pk]))
             _rmse_b.append(float(np.sqrt(np.mean((_v - TRUE[_pk]) ** 2))))
 
-        for _row, (_y_a, _y_b, _ylabel) in enumerate([
-            (_bias_a, _bias_b, "Bias"),
-            (_rmse_a, _rmse_b, "RMSE"),
-        ]):
+        for _row, (_y_a, _y_b, _ylabel) in enumerate(
+            [
+                (_bias_a, _bias_b, "Bias"),
+                (_rmse_a, _rmse_b, "RMSE"),
+            ]
+        ):
             _ax = _axes_c[_row, _ci]
             _ax.plot(_pc_a, _y_a, marker="o", color=_COLORS[_ci], lw=2, label="noisify")
             _ax.plot(
@@ -520,7 +537,6 @@ def _(
 ):
     from ml_switching_reg.mle import DriverSpecificProbUberMLE
 
-
     def _run_mle_coverage(
         weight=None, noise_scale=None, classifier_mode="noisify", seed_base=3000
     ):
@@ -544,7 +560,7 @@ def _(
             else:
                 _kw["noise_scale"] = noise_scale
             _df, _mw = _u.construct(**_kw)
-            _y, _Xl, _cp, _cm = extract_estimator_inputs(_df, _mw, REGIMES)
+            _y, _Xl, _cp, _cm, _ = extract_estimator_inputs(_df, _mw, REGIMES)
             try:
                 with contextlib.redirect_stdout(io.StringIO()):
                     _mod = DriverSpecificProbUberMLE.from_arrays(_y, _Xl, _cp, _cm)
@@ -558,7 +574,6 @@ def _(
             except Exception:
                 pass
         return {pk: np.mean(v) if v else np.nan for pk, v in hits.items()}
-
 
     _WEIGHT_GRID_D = [0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 0.95]
     _NS_GRID_D = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
@@ -621,12 +636,18 @@ def _(LABELS, PARAMS, REGIMES, df_cov_ml, df_cov_n, mo, np, plt):
         for ns in _ns_vals_d
     ]
     _ns_rc = (
-        float(np.interp(1.0 / REGIMES, list(reversed(_pc_d)), list(reversed(_ns_vals_d))))
+        float(
+            np.interp(1.0 / REGIMES, list(reversed(_pc_d)), list(reversed(_ns_vals_d)))
+        )
         if not any(np.isnan(_pc_d))
         else _ns_vals_d[-1]
     )
     _axes_d[1].axvline(
-        _ns_rc, color="gray", lw=1.0, linestyle=":", label=f"Random chance (P=1/{REGIMES})"
+        _ns_rc,
+        color="gray",
+        lw=1.0,
+        linestyle=":",
+        label=f"Random chance (P=1/{REGIMES})",
     )
     _axes_d[1].axhline(0.95, color="black", lw=1.2, linestyle="--", label="95% nominal")
 

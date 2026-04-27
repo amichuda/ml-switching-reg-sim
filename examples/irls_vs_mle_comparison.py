@@ -123,7 +123,9 @@ def _(UberDatasetCreatorHet, extract_estimator_inputs):
         weight=WEIGHT,
     )
 
-    y_base, X_base, cp_base, cm_base = extract_estimator_inputs(df_base, mw_base, REGIMES)
+    y_base, X_base, cp_base, cm_base, _ = extract_estimator_inputs(
+        df_base, mw_base, REGIMES
+    )
 
     print(f"N={len(y_base)}, R={REGIMES}, weight={WEIGHT}")
     print(f"True β0={beta0_true}  β1={beta1_true}  σ={sigma_true}")
@@ -162,9 +164,9 @@ def _(MLSwitchingRegIRLS, X_base, cm_base, cp_base, np, y_base):
     for _r in range(R_base):
         _mask = cp_base.argmax(axis=1) == _r
         if _mask.sum() > _p:
-            _beta_init[_r] = np.linalg.lstsq(X_base[_r][_mask], y_base[_mask], rcond=None)[
-                0
-            ]
+            _beta_init[_r] = np.linalg.lstsq(
+                X_base[_r][_mask], y_base[_mask], rcond=None
+            )[0]
 
     irls_beta_base, irls_s2_base = _mod.fit(
         beta_0=_beta_init, sigma2_0=float(np.var(y_base)), tol=1e-7, max_iter=500
@@ -337,11 +339,13 @@ def _(
     # Build equivalent shared X_list manually (intercept + drought_0 + drought_1, same for all regimes)
     _flat = df_base.reset_index()
     _X_shared = [
-        np.column_stack([
-            np.ones(len(y_base)),
-            _flat["drought_0"].values.astype(float),
-            _flat["drought_1"].values.astype(float),
-        ])
+        np.column_stack(
+            [
+                np.ones(len(y_base)),
+                _flat["drought_0"].values.astype(float),
+                _flat["drought_1"].values.astype(float),
+            ]
+        )
     ] * REGIMES
 
     # IRLS via formula
@@ -362,7 +366,10 @@ def _(
     # IRLS via arrays with same shared design (regression test)
     _irls_arr = MLSwitchingRegIRLS(y_base, _X_shared, cp_base, cm_base)
     _b_arr, _s2_arr = _irls_arr.fit(
-        beta_0=_beta_init_f.copy(), sigma2_0=float(np.var(y_base)), tol=1e-7, max_iter=500
+        beta_0=_beta_init_f.copy(),
+        sigma2_0=float(np.var(y_base)),
+        tol=1e-7,
+        max_iter=500,
     )
     _diff = float(np.max(np.abs(irls_beta_formula - _b_arr)))
     print(
@@ -370,7 +377,9 @@ def _(
     )
 
     # DSPMLE via formula
-    _start_f = np.append(irls_beta_formula.flatten(), np.sqrt(max(irls_s2_formula, 1e-6)))
+    _start_f = np.append(
+        irls_beta_formula.flatten(), np.sqrt(max(irls_s2_formula, 1e-6))
+    )
     _dsp_f = DriverSpecificProbUberMLE.from_formula_arrays(
         _formula, df_base, cp_base, cm_base, start_params=_start_f
     )
@@ -458,11 +467,13 @@ def _(UberDatasetCreatorHet, extract_estimator_inputs):
     )
 
     # Three lag specifications
-    y_lag, X_lag0, cp_lag, cm_lag = extract_estimator_inputs(
+    y_lag, X_lag0, cp_lag, cm_lag, _ = extract_estimator_inputs(
         df_lag, mw_lag, _REGIMES_L, lags=None
     )
-    _, X_lag1, _, _ = extract_estimator_inputs(df_lag, mw_lag, _REGIMES_L, lags=[1])
-    _, X_lag2, _, _ = extract_estimator_inputs(df_lag, mw_lag, _REGIMES_L, lags=[1, 2])
+    _, X_lag1, _, _, _ = extract_estimator_inputs(df_lag, mw_lag, _REGIMES_L, lags=[1])
+    _, X_lag2, _, _, _ = extract_estimator_inputs(
+        df_lag, mw_lag, _REGIMES_L, lags=[1, 2]
+    )
 
     print(
         f"N={len(y_lag)} (after dropping {_DRIVERS_L * _PERIODS_L - len(y_lag)} NaN-lag rows)"
@@ -498,7 +509,6 @@ def _(MLSwitchingRegIRLS, X_lag0, X_lag1, X_lag2, cm_lag, cp_lag, np, y_lag):
         beta, s2 = mod.fit(beta_0=b0, sigma2_0=float(np.var(y)), tol=1e-7, max_iter=500)
         return beta, s2
 
-
     lag_irls_0, lag_s2_0 = _fit_irls(y_lag, X_lag0, cp_lag, cm_lag)
     lag_irls_1, lag_s2_1 = _fit_irls(y_lag, X_lag1, cp_lag, cm_lag)
     lag_irls_2, lag_s2_2 = _fit_irls(y_lag, X_lag2, cp_lag, cm_lag)
@@ -531,13 +541,18 @@ def _(
     ]:
         _row = {"Spec": _spec}
         for _r in range(2):
-            _row[f"β0_r{_r} (true={TRUE_BETA0_LAG[_r]})"] = round(float(_beta[_r, 0]), 3)
+            _row[f"β0_r{_r} (true={TRUE_BETA0_LAG[_r]})"] = round(
+                float(_beta[_r, 0]), 3
+            )
             for _l, _bv in enumerate(_beta[_r, 1:]):
                 _row[f"β_lag{_l + 1}_r{_r}"] = round(float(_bv), 3)
         _row["σ"] = round(float(np.sqrt(_s2)), 3)
         _rmse = np.sqrt(
             np.mean(
-                (_beta[:, 1:].flatten() - np.tile(TRUE_BETA1_LAG, 2)[: _beta[:, 1:].size])
+                (
+                    _beta[:, 1:].flatten()
+                    - np.tile(TRUE_BETA1_LAG, 2)[: _beta[:, 1:].size]
+                )
                 ** 2
             )
         )
@@ -545,10 +560,12 @@ def _(
         _rows_lag.append(_row)
 
     _df_lag = pd.DataFrame(_rows_lag)
-    mo.vstack([
-        mo.md("### Lag specification — IRLS estimates"),
-        mo.ui.table(_df_lag),
-    ])
+    mo.vstack(
+        [
+            mo.md("### Lag specification — IRLS estimates"),
+            mo.ui.table(_df_lag),
+        ]
+    )
     return
 
 
@@ -628,7 +645,6 @@ def _(
     _B1 = [-1.5, 2.0]
     _SD = [1.0, 1.0]
 
-
     def _make_data(driver_fe):
         u = UberDatasetCreatorHet(
             drivers=_D_FE, time_periods=_T_FE, regimes=_R_FE, seed=_SEED_FE
@@ -643,10 +659,9 @@ def _(
             weight=_W_FE,
             driver_fe=driver_fe,
         )
-        y, Xl, cp, cm = extract_estimator_inputs(df, mw, _R_FE)
+        y, Xl, cp, cm, _ = extract_estimator_inputs(df, mw, _R_FE)
         entity_ids = df.index.get_level_values("driver").values
         return y, Xl, cp, cm, entity_ids
-
 
     def _fit_pair(y, X_list, cp, cm):
         """Fit IRLS + DSPMLE, return (irls_beta, dsp_beta)."""
@@ -669,7 +684,6 @@ def _(
         dsp_b = dsp_res.params.values[:-1].reshape(R, p)
         return irls_b, dsp_b
 
-
     _rows_fe = []
     for _scenario, _driver_fe in [("No true FE", False), ("True driver FE", True)]:
         y_fe, Xl_fe, cp_fe, cm_fe, eid_fe = _make_data(_driver_fe)
@@ -684,23 +698,31 @@ def _(
             ("Entity FE est.", ib_fe, db_fe),
         ]:
             for _r in range(_R_FE):
-                _rows_fe.append({
-                    "Scenario": _scenario,
-                    "Estimation": _label,
-                    "Regime": _r,
-                    "True β0": _B0[_r],
-                    "IRLS β0": round(float(_ib[_r, 0]), 3),
-                    "DSPMLE β0": round(float(_db[_r, 0]), 3),
-                    "True β1": _B1[_r],
-                    "IRLS β1": round(float(_ib[_r, 1]), 3) if _ib.shape[1] > 1 else "–",
-                    "DSPMLE β1": round(float(_db[_r, 1]), 3) if _db.shape[1] > 1 else "–",
-                })
+                _rows_fe.append(
+                    {
+                        "Scenario": _scenario,
+                        "Estimation": _label,
+                        "Regime": _r,
+                        "True β0": _B0[_r],
+                        "IRLS β0": round(float(_ib[_r, 0]), 3),
+                        "DSPMLE β0": round(float(_db[_r, 0]), 3),
+                        "True β1": _B1[_r],
+                        "IRLS β1": round(float(_ib[_r, 1]), 3)
+                        if _ib.shape[1] > 1
+                        else "–",
+                        "DSPMLE β1": round(float(_db[_r, 1]), 3)
+                        if _db.shape[1] > 1
+                        else "–",
+                    }
+                )
 
     df_fe = pd.DataFrame(_rows_fe)
-    mo.vstack([
-        mo.md("### Fixed effects comparison — β₀ and β₁ estimates"),
-        mo.ui.table(df_fe),
-    ])
+    mo.vstack(
+        [
+            mo.md("### Fixed effects comparison — β₀ and β₁ estimates"),
+            mo.ui.table(df_fe),
+        ]
+    )
     return (df_fe,)
 
 
@@ -719,7 +741,10 @@ def _(df_fe, mo, np, plt):
     _B1_c = [-1.5, 2.0]
     _R_FE = 2
     _params = ["β0", "β1"]
-    _true_vals = {0: {"β0": _B0_c[0], "β1": _B1_c[0]}, 1: {"β0": _B0_c[1], "β1": _B1_c[1]}}
+    _true_vals = {
+        0: {"β0": _B0_c[0], "β1": _B1_c[0]},
+        1: {"β0": _B0_c[1], "β1": _B1_c[1]},
+    }
 
     _fig, _axes = plt.subplots(2, 2, figsize=(13, 7), sharey=False)
 
@@ -730,12 +755,14 @@ def _(df_fe, mo, np, plt):
             _width = 0.18
             _offsets = [-1.5, -0.5, 0.5, 1.5]
 
-            for _oi, (_est, _col_key) in enumerate([
-                ("No FE est.", f"IRLS {_param}"),
-                ("No FE est.", f"DSPMLE {_param}"),
-                ("Entity FE est.", f"IRLS {_param}"),
-                ("Entity FE est.", f"DSPMLE {_param}"),
-            ]):
+            for _oi, (_est, _col_key) in enumerate(
+                [
+                    ("No FE est.", f"IRLS {_param}"),
+                    ("No FE est.", f"DSPMLE {_param}"),
+                    ("Entity FE est.", f"IRLS {_param}"),
+                    ("Entity FE est.", f"DSPMLE {_param}"),
+                ]
+            ):
                 _sub = df_fe[
                     (df_fe["Scenario"] == _scenario) & (df_fe["Estimation"] == _est)
                 ]
@@ -776,7 +803,13 @@ def _(df_fe, mo, np, plt):
         _mpatches.Patch(color="#d65f5f", alpha=0.55, hatch="//", label="FE IRLS"),
         _mpatches.Patch(color="#ee854a", alpha=0.55, hatch="//", label="FE DSPMLE"),
         plt.Line2D(
-            [0], [0], color="black", lw=1.5, linestyle="--", alpha=0.6, label="True value"
+            [0],
+            [0],
+            color="black",
+            lw=1.5,
+            linestyle="--",
+            alpha=0.6,
+            label="True value",
         ),
     ]
     _fig.legend(
@@ -904,7 +937,6 @@ def _(
     _B1 = [-1.5, 2.0]
     _SD = [1.0, 1.0]
 
-
     def _run_irls(drivers, weight, seed):
         u = UberDatasetCreatorHet(
             drivers=drivers, time_periods=_PERIODS, regimes=_REGIMES, seed=seed
@@ -918,7 +950,7 @@ def _(
             y_sd=_SD,
             weight=weight,
         )
-        y, Xl, cp, cm = extract_estimator_inputs(df, mw, _REGIMES)
+        y, Xl, cp, cm, _ = extract_estimator_inputs(df, mw, _REGIMES)
         mod = MLSwitchingRegIRLS(y, Xl, cp, cm)
         R = mod.n_regimes
         p = mod.num_params
@@ -928,7 +960,9 @@ def _(
             if mask.sum() > p:
                 b0[r] = np.linalg.lstsq(Xl[r][mask], y[mask], rcond=None)[0]
         with _contextlib.redirect_stdout(_io.StringIO()):
-            beta, s2 = mod.fit(beta_0=b0, sigma2_0=float(np.var(y)), tol=1e-7, max_iter=500)
+            beta, s2 = mod.fit(
+                beta_0=b0, sigma2_0=float(np.var(y)), tol=1e-7, max_iter=500
+            )
         return {
             "beta0_0": float(beta[0, 0]),
             "beta1_0": float(beta[0, 1]),
@@ -936,7 +970,6 @@ def _(
             "beta1_1": float(beta[1, 1]),
             "sigma": float(np.sqrt(max(s2, 1e-10))),
         }
-
 
     _rows = []
     for _d in _DRIVER_GRID:
@@ -954,7 +987,13 @@ def _(
 
 @app.cell
 def _(df_mc_size, mo, np, pd):
-    _TRUE = {"beta0_0": 1.0, "beta1_0": -1.5, "beta0_1": 3.0, "beta1_1": 2.0, "sigma": 1.0}
+    _TRUE = {
+        "beta0_0": 1.0,
+        "beta1_0": -1.5,
+        "beta0_1": 3.0,
+        "beta1_1": 2.0,
+        "sigma": 1.0,
+    }
     _LABELS = {
         "beta0_0": "β₀ regime 0",
         "beta1_0": "β₁ regime 0",
@@ -967,28 +1006,38 @@ def _(df_mc_size, mo, np, pd):
     for (_d, _N), _grp in df_mc_size.groupby(["drivers", "N"]):
         for _p, _true in _TRUE.items():
             _v = _grp[_p].values
-            _agg.append({
-                "Drivers": int(_d),
-                "N": int(_N),
-                "Parameter": _LABELS[_p],
-                "True": _true,
-                "Mean est.": round(float(np.mean(_v)), 3),
-                "Bias": round(float(np.mean(_v) - _true), 3),
-                "RMSE": round(float(np.sqrt(np.mean((_v - _true) ** 2))), 3),
-                "Std": round(float(np.std(_v)), 3),
-            })
+            _agg.append(
+                {
+                    "Drivers": int(_d),
+                    "N": int(_N),
+                    "Parameter": _LABELS[_p],
+                    "True": _true,
+                    "Mean est.": round(float(np.mean(_v)), 3),
+                    "Bias": round(float(np.mean(_v) - _true), 3),
+                    "RMSE": round(float(np.sqrt(np.mean((_v - _true) ** 2))), 3),
+                    "Std": round(float(np.std(_v)), 3),
+                }
+            )
 
     df_agg_size = pd.DataFrame(_agg)
-    mo.vstack([
-        mo.md("### Sample size sensitivity — summary statistics"),
-        mo.ui.table(df_agg_size),
-    ])
+    mo.vstack(
+        [
+            mo.md("### Sample size sensitivity — summary statistics"),
+            mo.ui.table(df_agg_size),
+        ]
+    )
     return
 
 
 @app.cell
 def _(df_mc_size, mo, np, plt):
-    _TRUE = {"beta0_0": 1.0, "beta1_0": -1.5, "beta0_1": 3.0, "beta1_1": 2.0, "sigma": 1.0}
+    _TRUE = {
+        "beta0_0": 1.0,
+        "beta1_0": -1.5,
+        "beta0_1": 3.0,
+        "beta1_1": 2.0,
+        "sigma": 1.0,
+    }
     _PARAMS = [
         ("beta0_0", "beta0_1", "β₀", ["Regime 0 (true=1.0)", "Regime 1 (true=3.0)"]),
         (
@@ -1119,7 +1168,6 @@ def _(
     _B1_E = [-1.5, 2.0]
     _SD_E = [1.0, 1.0]
 
-
     def _run_irls_e(weight, seed):
         u = UberDatasetCreatorHet(
             drivers=_DRIVERS_E, time_periods=_PERIODS_E, regimes=_REGIMES_E, seed=seed
@@ -1133,7 +1181,7 @@ def _(
             y_sd=_SD_E,
             weight=weight,
         )
-        y, Xl, cp, cm = extract_estimator_inputs(df, mw, _REGIMES_E)
+        y, Xl, cp, cm, _ = extract_estimator_inputs(df, mw, _REGIMES_E)
         mod = MLSwitchingRegIRLS(y, Xl, cp, cm)
         R = mod.n_regimes
         p = mod.num_params
@@ -1143,7 +1191,9 @@ def _(
             if mask.sum() > p:
                 b0[r] = np.linalg.lstsq(Xl[r][mask], y[mask], rcond=None)[0]
         with _contextlib2.redirect_stdout(_io2.StringIO()):
-            beta, s2 = mod.fit(beta_0=b0, sigma2_0=float(np.var(y)), tol=1e-7, max_iter=500)
+            beta, s2 = mod.fit(
+                beta_0=b0, sigma2_0=float(np.var(y)), tol=1e-7, max_iter=500
+            )
         return {
             "beta0_0": float(beta[0, 0]),
             "beta1_0": float(beta[0, 1]),
@@ -1151,7 +1201,6 @@ def _(
             "beta1_1": float(beta[1, 1]),
             "sigma": float(np.sqrt(max(s2, 1e-10))),
         }
-
 
     _rows_e = []
     for _w in _WEIGHT_GRID:
@@ -1187,21 +1236,25 @@ def _(df_mc_weight, mo, np, pd):
     for _w, _grp in df_mc_weight.groupby("weight"):
         for _p, _true in _TRUE_E.items():
             _v = _grp[_p].values
-            _agg_e.append({
-                "Weight": float(_w),
-                "Parameter": _LABELS_E[_p],
-                "True": _true,
-                "Mean est.": round(float(np.mean(_v)), 3),
-                "Bias": round(float(np.mean(_v) - _true), 3),
-                "RMSE": round(float(np.sqrt(np.mean((_v - _true) ** 2))), 3),
-                "Std": round(float(np.std(_v)), 3),
-            })
+            _agg_e.append(
+                {
+                    "Weight": float(_w),
+                    "Parameter": _LABELS_E[_p],
+                    "True": _true,
+                    "Mean est.": round(float(np.mean(_v)), 3),
+                    "Bias": round(float(np.mean(_v) - _true), 3),
+                    "RMSE": round(float(np.sqrt(np.mean((_v - _true) ** 2))), 3),
+                    "Std": round(float(np.std(_v)), 3),
+                }
+            )
 
     df_agg_weight = pd.DataFrame(_agg_e)
-    mo.vstack([
-        mo.md("### Misclassification rate sensitivity — summary statistics"),
-        mo.ui.table(df_agg_weight),
-    ])
+    mo.vstack(
+        [
+            mo.md("### Misclassification rate sensitivity — summary statistics"),
+            mo.ui.table(df_agg_weight),
+        ]
+    )
     return
 
 
@@ -1244,7 +1297,9 @@ def _(df_mc_weight, mo, np, plt):
                 for _w in _weight_vals:
                     _v = df_mc_weight[df_mc_weight["weight"] == _w][_pk].values
                     _vals_bias.append(float(np.mean(_v) - _TRUE_E2[_pk]))
-                    _vals_rmse.append(float(np.sqrt(np.mean((_v - _TRUE_E2[_pk]) ** 2))))
+                    _vals_rmse.append(
+                        float(np.sqrt(np.mean((_v - _TRUE_E2[_pk]) ** 2)))
+                    )
                     _vals_std.append(float(np.std(_v)))
 
                 _y = _vals_bias if _row == 0 else _vals_rmse
