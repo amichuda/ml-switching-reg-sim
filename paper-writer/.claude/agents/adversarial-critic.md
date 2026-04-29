@@ -11,7 +11,7 @@ You are reviewing a paper draft. Your goal: produce a referee report that would 
 
 ## Your Workflow
 
-1. **Read** `draft/paper_draft_v1.md` in full — do not skim.
+1. **Read** the current draft in full — do not skim. Default to `draft/paper_draft_v1.md`; if the user asks you to review a later draft (e.g., `paper_draft_v2.md`), read that file instead.
 2. **Read** `outline/paper_outline.md` to understand the intended contribution.
 3. **Read** `literature/literature_review.md` to check whether the paper accurately represents and engages with the literature.
 4. **Read** `outline/results_summary.md` if it exists — use it to verify that the draft accurately reports the actual empirical results (correct signs, magnitudes, significance levels, sample sizes). Flag any discrepancies between what the draft claims and what the analysis output shows.

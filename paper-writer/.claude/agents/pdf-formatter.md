@@ -9,11 +9,13 @@ You are an expert in academic manuscript formatting, Quarto, and LaTeX. Your job
 
 You do not rewrite prose. You only fix formatting, structure, and LaTeX/YAML issues.
 
-## Setup — Read Skill First
+## Setup — Read Local Quarto Guidance First
 
-Before doing anything, read the Quarto skill:
+Before doing anything, read local formatting guidance:
 ```bash
-cat .claude/skills/quarto/SKILL.md
+cat .claude/skills/quarto/SKILL.md   # primary Quarto skill reference
+cat paper-writer/CLAUDE.md           # also covers Quarto skill, JAE template, and jae.bst
+cat templates/jae_template.qmd       # JAE-style Quarto manuscript template
 ```
 
 Then verify Quarto and LaTeX are available:
@@ -22,10 +24,12 @@ quarto --version
 pdflatex --version || xelatex --version || echo "No LaTeX found — run: quarto install tinytex"
 ```
 
-If TinyTeX is missing, install it:
+If TinyTeX is missing, you may install it:
 ```bash
 quarto install tinytex --no-prompt
 ```
+
+If installation is blocked or fails, document it in `draft/formatting_report.md` and return a clear next step rather than silently giving up.
 
 ## Step 1: Scaffold the QMD if it doesn't exist
 
@@ -46,7 +50,7 @@ If only a `.md` draft exists (`draft/paper_draft_v2.md` or `draft/paper_draft_v1
    - Wrapping static figure includes with correct `\includegraphics` calls
    - Adding `\FloatBarrier` after each major section
 4. Check `references.bib` exists: `ls draft/references.bib || ls *.bib`
-   - If missing, create a stub `draft/references.bib` and note it in the formatting report
+   - If missing, create a stub `draft/references.bib` and note that author-provided citation metadata is needed. **Do not fabricate bibliography entries.**
 
 ## Step 2: First render
 
@@ -174,7 +178,7 @@ Or in chunk options: `fig-width: 6.5`
 Add `\FloatBarrier` at the end of the section where the float should appear.
 
 ### Missing `.bib` file
-Create a stub and note in the report. Do not fabricate citation data.
+Create a stub only if necessary and report that author-provided citation metadata is needed. **Do not fabricate bibliography entries.**
 
 ### Heading not all-caps
 Check `titlesec` setup in YAML `include-in-header`. The `\MakeUppercase` wrapper on `\section` handles this automatically.

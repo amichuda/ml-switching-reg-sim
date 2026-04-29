@@ -1,0 +1,408 @@
+---
+title: "Inference in Switching Regressions with ML-Generated Regimes"
+author:
+  - name: "Aleksandr Michuda"
+    affiliation: "Department of Economics, Swarthmore College"
+    email: "amichud1@swarthmore.edu"
+    corresponding: true
+date: today
+date-format: long
+
+abstract: |
+  Researchers increasingly use machine-learning predictions to assign observations
+  to latent categories that index regime-specific regression slopes. I study finite-sample
+  inference in this setting by treating the predicted regime as a generated regressor
+  with a known confusion-matrix error structure. The estimator combines the classifier's
+  soft predictions with a column-normalized confusion matrix to form unit-level posterior
+  probabilities over true regimes, runs an EM-style iteratively reweighted least squares
+  routine for stable starting values, and then estimates the switching-regression model
+  by full maximum likelihood. In a 72-cell Monte Carlo, the corrected estimator delivers
+  near-nominal coverage when classifier signal is moderate and produces large bias and
+  coverage gains over a naive hard-classification baseline once the regime count exceeds
+  two. The exercise extends the generated-regressor framework recently developed by
+  [Battaglia et al., 2024] to switching regressions, where the latent variable shifts
+  the slope of the outcome on a regime-specific shock rather than entering as a
+  scalar covariate.
+
+keywords:
+  - generated regressors
+  - machine learning
+  - misclassification
+  - switching regression
+  - Monte Carlo
+
+format:
+  pdf:
+    documentclass: article
+    classoption: [12pt, letterpaper]
+
+    geometry:
+      - margin=1in
+
+    linestretch: 2
+
+    fontfamily: lmodern
+
+    number-sections: true
+    number-depth: 3
+
+    keep-tex: true
+
+    colorlinks: false
+    linkcolor: black
+    citecolor: black
+    urlcolor: black
+
+    include-in-header:
+      text: |
+        % ---- Core packages ----
+        \usepackage{booktabs}
+        \usepackage{setspace}
+        \usepackage{float}
+        \usepackage{placeins}
+        \usepackage{caption}
+        \usepackage{microtype}
+        \usepackage{amsmath}
+        \usepackage{amssymb}
+        \usepackage{bm}
+
+        % ---- Caption style ----
+        \captionsetup[table]{
+          position=top,
+          labelfont=bf,
+          labelsep=newline,
+          justification=justified,
+          singlelinecheck=false,
+          textfont=normalsize
+        }
+        \captionsetup[figure]{
+          position=bottom,
+          labelfont=bf,
+          labelsep=period,
+          justification=justified
+        }
+
+        \renewcommand{\tablename}{\textbf{TABLE}}
+        \renewcommand{\figurename}{\textbf{FIGURE}}
+
+        \usepackage{fancyhdr}
+        \pagestyle{fancy}
+        \fancyhf{}
+        \fancyfoot[C]{\thepage}
+        \renewcommand{\headrulewidth}{0pt}
+        \renewcommand{\footrulewidth}{0pt}
+        \fancypagestyle{plain}{
+          \fancyhf{}
+          \fancyfoot[C]{\thepage}
+          \renewcommand{\headrulewidth}{0pt}
+        }
+
+        \usepackage{titlesec}
+        \titleformat{\section}
+          {\normalfont\bfseries\large}
+          {\thesection.}{0.5em}
+          {\MakeUppercase}
+        \titleformat{\subsection}
+          {\normalfont\bfseries\normalsize}
+          {\thesubsection.}{0.5em}{}
+          \titleformat{\subsubsection}
+          {\normalfont\bfseries\normalsize}
+          {\thesubsubsection.}{0.5em}{}
+
+        \widowpenalty=10000
+        \clubpenalty=10000
+
+---
+
+\newpage
+
+# Introduction
+
+Empirical researchers increasingly use machine-learning predictions as an intermediate input to a downstream regression. The classifier's prediction stands in for a latent variable of economic interest---a topic, a sentiment, an industry assignment, an ethnic or geographic category---and the downstream regression then uses that estimate as a covariate. [Battaglia et al., 2024] formalize this two-step strategy and show that, in linear-in-prediction regressions, naively treating the ML output as data leads to bias even when standard errors are consistent. Their setup covers a wide class of applications including text-based indices, topic models, and AI-generated labels.
+
+This paper extends the same problem to a setting that the linear-in-prediction framework does not cover: **switching regressions with ML-generated regime labels**. Rather than entering linearly, the latent variable indexes which slope of an outcome on a regime-specific shock applies to a given unit. The motivating example is my own work in [Michuda, 2023], where I use a name-based classifier to assign Uber drivers in Kampala to rural regions of origin and then estimate driver labor-supply responses to region-specific weather shocks. The classifier produces a probability vector over regions, and the structural object of interest is the slope of weekly hours on the matched region's shock. Treating the modal predicted region as the true region throws away the uncertainty in the classifier and, as I show below, biases the slope estimates as soon as the number of regions exceeds two.
+
+I make three contributions.
+
+First, I show how to recast the switching-regression measurement-error problem in the generated-regressor framework of [Battaglia et al., 2024]. The two-step strategy in their notation regresses an outcome $Y_i$ on $\hat\theta_i$ and observed covariates $\mathbf{q}_i$, where $\hat\theta_i$ is an ML estimate of a latent $\theta_i$. In the switching-regression case, $\theta_i$ is a categorical regime label $r_i \in \{0,\ldots,R-1\}$, and the regression is not linear in $\theta_i$: each regime has its own slope on its own regime-specific shock. The generated-regressor problem reappears, but in a form that admits a different correction: the classifier's full soft output and a known confusion matrix together define posterior probabilities over true regimes, and these can be used directly inside a finite-mixture likelihood. This is in contrast to endogenously determined switching probabilities in the classic switching-regression literature ([Quandt, 1972]; [Goldfeld and Quandt, 1973]; [Hamilton, 1989]; [Heckman, 1979]); in my case the probabilities are exogenous to the structural model and come from an upstream classifier, akin to multi-valued propensity scores estimated by machine learning ([Imbens, 2000]; [Westreich, Lessler, and Funk, 2010]; [Lee, Lessler, and Stuart, 2010]; [Goller, 2020]).
+
+Second, I evaluate the resulting estimator in a 72-cell Monte Carlo that varies regime count, classifier informativeness, and the correlation among regime-specific shocks. With moderate classifier error (classification weight at most 0.7), the corrected MLE delivers near-nominal coverage: averaging over regime counts and shock correlations, slope coverage is 0.936 for analytical Wald intervals and 0.959 for score wild bootstrap intervals. An EM-style iteratively reweighted least squares (IRLS) initializer produces nearly identical point estimates across all cells (mean slope RMSE 0.264 versus 0.263 for the MLE), which I treat as a useful diagnostic rather than a separate estimator.
+
+Third, I compare the corrected MLE to a naive hard-classification baseline that assigns each unit to its modal predicted regime and runs OLS by regime with cluster-robust standard errors. The two estimators are indistinguishable when there are only two regimes, where the modal class remains correct on a majority of observations even at the highest classifier error. Once the regime count exceeds two, the naive baseline collapses: at four regimes with the heaviest misclassification weight, naive 95 percent coverage is 0.001 and corrected bootstrap coverage is 0.471; at ten regimes the analogous numbers are 0.145 and 0.483. The correction therefore matters most precisely where prediction-based research is moving fastest, namely many-category classification problems generated by modern ML pipelines.
+
+The paper proceeds as follows. Section 2 sets up the switching-regression model in BCHS-compatible notation and lays out three identification requirements that drive the simulation results. Section 3 describes the IRLS-then-MLE estimator and the score wild bootstrap. Section 4 lays out the Monte Carlo design. Section 5 presents the simulation results, the naive comparison, and a side-by-side with bias-corrected two-step inference. Section 6 discusses limitations and what would be required to push the estimator into applied use. Section 7 concludes. Appendix A reports computation and convergence diagnostics. Appendix B reproduces the design summary and the full coverage and performance tables.
+
+\FloatBarrier
+
+# Model and Identification
+
+Index units by $i = 1, \ldots, n$ and time periods by $t = 1, \ldots, T_i$. Each unit has a single latent regime $r_i \in \{0, \ldots, R-1\}$ that is fixed across the unit's observations. I write $\theta_i = r_i$ to keep notation aligned with [Battaglia et al., 2024] but emphasize that $\theta_i$ here is categorical rather than continuous. The outcome equation is
+
+$$
+Y_{it} = \alpha_{r_i} + \beta_{r_i} \, x_{r_i, t} + \mathbf{q}_{it}^{\top} \delta + \varepsilon_{it},
+$$
+
+where $x_{rt}$ is the regime-$r$ shock at time $t$, $(\alpha_r, \beta_r)$ are regime-specific parameters, $\mathbf{q}_{it}$ is a vector of ordinary covariates with common coefficient $\delta$, and $\varepsilon_{it}$ is an idiosyncratic error with $\mathbb{E}[\varepsilon_{it} \mid r_i, x, \mathbf{q}] = 0$. The empirical analysis uses a common error variance $\sigma^2$ across regimes; relaxing that is a natural extension. The structural objects of interest are $\psi = (\alpha_0, \beta_0, \ldots, \alpha_{R-1}, \beta_{R-1}, \delta, \sigma)$.
+
+I do not observe $r_i$ directly. Instead, I observe the soft output of an upstream classifier. Let $\mathbf{p}_i = (p_i(0), \ldots, p_i(R-1))^{\top}$ denote the classifier's predicted probabilities over the $R$ classes for unit $i$. I also assume a known $R \times R$ confusion matrix $M$ from validation data, with $M_{kj} = \Pr(\text{predicted} = j \mid \text{true} = k)$. Both $\mathbf{p}_i$ and $M$ are produced upstream and treated as known to the estimator. This parallels BCHS's two-step strategy, except that I exploit the categorical structure of $\theta_i$ to invert the confusion matrix and form posterior weights:
+
+$$
+w_i(k) = \sum_{j=0}^{R-1} p_i(j) \cdot \frac{M_{kj}}{\sum_{k'} M_{k'j}}.
+$$
+
+The fraction $M_{kj} / \sum_{k'} M_{k'j} = \Pr(\text{true} = k \mid \text{predicted} = j)$ is the column-normalized confusion matrix. The vector $\mathbf{w}_i = (w_i(0), \ldots, w_i(R-1))^{\top}$ is the unit's posterior over true regimes given the classifier's soft prediction and the validation-data error structure. It plays the role of a multi-valued, ML-derived propensity score. Two limits are useful: with a perfect classifier, $M$ is the identity, $\mathbf{p}_i$ concentrates on the true regime, and $\mathbf{w}_i$ is the truth; with an uninformative classifier, $\mathbf{p}_i$ is uniform, $\mathbf{w}_i$ is uniform, and the likelihood loses its grip on regime-specific parameters.
+
+Because regime is fixed within unit, the appropriate likelihood marginalizes over $r_i$ at the unit level after multiplying within-unit time-series contributions. For unit $i$, conditional on the observed shocks and covariates,
+
+$$
+L_i(\psi) = \sum_{r=0}^{R-1} w_i(r) \, \prod_{t=1}^{T_i} \phi\!\left( \frac{Y_{it} - \alpha_r - \beta_r x_{rt} - \mathbf{q}_{it}^{\top}\delta}{\sigma} \right) \frac{1}{\sigma},
+$$
+
+where $\phi(\cdot)$ is the standard normal density. The full sample log-likelihood is $\ell(\psi) = \sum_{i=1}^n \log L_i(\psi)$.
+
+This is a finite mixture with externally fixed mixture weights. It is what BCHS call a one-step strategy, specialized to the case where $\theta_i$ is categorical and the regression structure is multiplicative in $\theta_i$ rather than additive. The two-step strategy in this setting would either (i) substitute the modal predicted regime as a hard label and run OLS by regime---the naive baseline I evaluate in Section 5---or (ii) interact the classifier's posterior weights with the shocks before running OLS, which is implicitly what an IRLS half-step does once. The MLE solves the full mixture and uses the likelihood curvature to deliver standard errors.
+
+## Identification
+
+Three conditions determine whether $\psi$ is identified at the population level and in finite samples. The first two are standard for switching-regression models; the third is specific to the generated-regressor framing.
+
+**Variation in the posterior weights.** The classifier weights $\mathbf{w}_i$ must vary across units. If every unit has the same $\mathbf{w}_i$, the likelihood cannot separate regime-specific intercepts and slopes from a common mean and a common slope on the shock. Equivalently, the matrix with rows $(w_i(0), \ldots, w_i(R-1))$ must have full column rank as $n$ grows. In practice, this requires that the classifier is informative enough that different units receive materially different posterior probabilities.
+
+**Variation in the regime-specific covariates.** The shocks $x_{rt}$ must have nontrivial within-cell variation. If two regimes' shocks are perfectly collinear, the likelihood cannot tell their slopes apart even when the posteriors $\mathbf{w}_i$ separate the regimes. The simulation below varies the equicorrelation $\rho$ among regime-specific shocks to capture this threat.
+
+**Interaction between regime count and classifier accuracy.** A fixed classifier-error rate implies very different signal levels at different $R$, because correct-class probability is bounded above by $1 - w(1 - 1/R)$ in the simulation design used here. Identification weakens roughly with the gap between the largest entry of the column-normalized confusion matrix and the second-largest. When that gap shrinks below $1/R$, the classifier no longer provides enough cross-unit variation to pin down regime-specific slopes, even with nontrivial within-cell shock variation. Section 5 shows that this third condition is what drives the coverage collapse in many-regime, high-classifier-error cells.
+
+\FloatBarrier
+
+# Estimation and Inference
+
+I estimate the model in two stages. The first stage is an EM-style IRLS routine. Given a current parameter vector, the E-step computes posterior probabilities that each unit belongs to each regime conditional on both the classifier weights and the current likelihood. The M-step solves regime-specific weighted least-squares problems for $(\alpha_r, \beta_r)$ and updates a common variance estimate. IRLS is fast and converges reliably from naive starting values, which makes it a practical initializer. The second stage takes the IRLS estimates as the starting vector for a quasi-Newton optimizer that maximizes $\ell(\psi)$ directly. Both stages are implemented in the open-source `ml-switching-reg` Python package that supports my JDE paper.
+
+Two confidence intervals are computed. The first is the analytical Wald interval based on the inverse Hessian. The second is a score wild bootstrap interval ([Kline and Santos, 2012]) with clusters at the unit level, since the latent regime is fixed within unit and within-unit residuals are likely to be dependent. The bootstrap is the more credible interval in this setting because the analytical Hessian inherits any misspecification of the within-unit dependence structure.
+
+I treat the MLE as the primary estimator. The IRLS estimator's role in the paper is two-fold: as a starting-value generator for the MLE, and as an algorithmic diagnostic. As Section 5 reports, IRLS and MLE are nearly indistinguishable in point-estimate RMSE across the entire 72-cell design, which I read as a feature: any future application in which IRLS and MLE disagree materially should be treated as a flag for misspecification, weak identification, or numerical pathology in the optimizer.
+
+In Section 5 I also evaluate a naive hard-classification baseline. Each unit is assigned to its modal predicted regime, and OLS is run separately by predicted regime with [Cameron, Gelbach, and Miller, 2008] cluster-robust standard errors clustered at the unit level. This is the natural comparator for applied work that treats classifier output as a categorical label, and it stands in for the two-step strategy in the BCHS sense. I do not implement the BCHS analytical bias correction because their construction assumes a linear-in-$\theta_i$ regression, which is not the structure here; the naive baseline plus the corrected MLE bracket the realistic applied choices.
+
+\FloatBarrier
+
+# Monte Carlo Design
+
+Each replication generates a panel with $n = 200$ units and $T = 15$ time periods, giving $3{,}000$ observations per replication. The number of latent regimes is $R \in \{2, 4, 10\}$. True intercepts and slopes vary by regime: with two regimes the slopes are $3.0$ and $-2.0$; with four regimes they are $3.0$, $-2.0$, $1.5$, and $-1.0$; with ten regimes they are linearly spaced from $3.0$ to $-2.0$. The error standard deviation is one in every regime.
+
+Classifier quality is governed by a misclassification weight $w \in \{0.0, 0.1, 0.3, 0.5, 0.7, 0.9\}$. When $w = 0$, the classifier is perfect. As $w$ rises, probability mass moves from the true class to incorrect classes. The mapping from weight to correct-class probability is
+
+$$
+\Pr(\text{correct}) = 1 - w \, (1 - 1/R).
+$$
+
+The same $w$ implies different signal levels for different $R$. At $w = 0.9$ correct-class probability is $0.55$ for two regimes, $0.325$ for four regimes, and $0.19$ for ten regimes; the high-weight many-regime cells are the regions where the third identification condition in Section 2.1 starts to bind.
+
+The design also varies the equicorrelation among regime-specific shocks, $\rho \in \{0.0, 0.3, 0.6, 0.9\}$, which addresses the second identification condition. A high-correlation, high-misclassification, many-regime cell is therefore the hardest case for the estimator on both identification dimensions.
+
+The full factorial yields 72 design cells: three regime counts, six misclassification weights, and four shock correlations. Each cell has 200 replications, producing 153,600 parameter-replication rows. Each replication records IRLS estimates, MLE estimates, naive hard-classification estimates, analytical standard errors, score wild bootstrap intervals, naive cluster-robust standard errors, convergence indicators, and runtime.
+
+\begin{table}[htbp]
+\centering
+\caption{Monte Carlo design summary.}
+\label{tab:design}
+\input{../results/tables/table_A0_design_summary.tex}
+\begin{flushleft}
+{\small \textit{Note.} Full factorial design with 72 cells.}
+\end{flushleft}
+\end{table}
+
+\FloatBarrier
+
+# Results
+
+## Coverage of the corrected estimator
+
+Figure 1 plots, for each regime count, the gap between empirical 95 percent slope coverage and the nominal target. The left column reports analytical Wald coverage; the right column reports score wild bootstrap coverage. Each heatmap varies misclassification weight on the horizontal axis and shock correlation on the vertical axis.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{../results/figures/figure_1_coverage_landscape.pdf}
+\caption{Coverage landscape: empirical 95\% CI coverage minus the 0.95 target, by regime count, shock correlation, and misclassification weight. Left column: analytical Wald intervals. Right column: score wild bootstrap intervals.}
+\label{fig:coverage-landscape}
+\end{figure}
+
+Three findings stand out. First, coverage is close to nominal through a wide middle range of the design. For cells with $w \le 0.7$, average slope coverage is 0.936 for analytical Wald intervals and 0.959 for score wild bootstrap intervals, averaged over $R$ and $\rho$. The bootstrap is slightly conservative on average, which is visible in several cells with coverage above $0.95$.
+
+Second, coverage failure is concentrated in extreme high-misclassification, many-regime cells. Across all design cells, average analytical Wald coverage is 0.884 and average bootstrap coverage is 0.906. The drop from the moderate-design averages is driven primarily by $w = 0.9$. Averaging over regime counts and correlations, bootstrap coverage is 0.640 at $w = 0.9$ compared with at least 0.953 for each lower weight.
+
+Third, two-regime designs remain well behaved even at high $w$. With $R = 2$ and $\rho = 0$, bootstrap coverage ranges from 0.948 to 0.982 across the misclassification grid. At $R = 2$ even $w = 0.9$ leaves correct-class probability at 0.55, so the classifier is noisy but not essentially useless. By contrast, at $R = 4$ and $w = 0.9$, correct-class probability is 0.325, and at $R = 10$, it is 0.19. The coverage collapse in those cells is the third identification condition from Section 2.1 binding tightly.
+
+The hardest cells are instructive. With $R = 4$, $\rho = 0.9$, and $w = 0.9$, analytical Wald coverage is 0.138 and bootstrap coverage is 0.142. With $R = 10$, $\rho = 0.9$, and $w = 0.9$, analytical Wald coverage is 0.230 and bootstrap coverage is 0.242. These cells combine all three identification threats simultaneously and are stress tests rather than realistic applied settings. Table A2 reports compact coverage results for the central $\rho = 0.6$ slice; the full grid is in Appendix B.
+
+\begin{table}[htbp]
+\centering
+\caption{Slope 95\% coverage by regime count and misclassification weight, $\rho = 0.6$.}
+\label{tab:coverage-rho06}
+\input{../results/tables/table_A2_coverage_rho_0_6.tex}
+\begin{flushleft}
+{\small \textit{Note.} \texttt{wald\_coverage} is analytical-Wald coverage; \texttt{bootstrap\_coverage} is the score wild bootstrap; \texttt{naive\_coverage} is the hard-classification baseline. Classification error is $w(1 - 1/R)$.}
+\end{flushleft}
+\end{table}
+
+## Naive hard-classification baseline
+
+Figure 2 compares the corrected MLE to the naive hard-classification baseline. Panel (a) plots mean slope bias against classifier error probability for both estimators across regime counts; panel (b) plots the corresponding 95 percent CI coverage.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{../results/figures/figure_5_naive_vs_corrected.pdf}
+\caption{Naive hard-classification baseline vs. corrected MLE. Panel (a): mean slope bias by classifier error probability and regime count. Panel (b): mean 95\% CI coverage. Lines are averaged over shock correlation.}
+\label{fig:naive-vs-corrected}
+\end{figure}
+
+The two estimators are nearly indistinguishable for two-regime designs. At $R = 2$ with $w = 0.9$, naive coverage averages 0.955 and corrected bootstrap coverage averages 0.960. Naive RMSE and slope bias also track the corrected estimator across the entire two-regime grid. The reason is mechanical: at $R = 2$, the modal predicted class remains correct on a majority of units even at the highest misclassification weight, so hard classification recovers approximately the right partition and OLS within each predicted regime is nearly unbiased.
+
+The gap opens dramatically at $R = 4$ and $R = 10$. At $R = 4$ with $w = 0.9$, naive 95 percent coverage averages 0.001 across shock correlations and corrected bootstrap coverage averages 0.471. At $R = 10$ with $w = 0.9$, naive coverage averages 0.145 and corrected bootstrap coverage averages 0.483. The naive estimator's mean absolute slope bias rises from 0.032 at $R = 4$, $w \le 0.7$ to 1.825 at $R = 4$, $w = 0.9$. The corresponding corrected MLE bias is 0.032 and 1.533 respectively; both estimators are stressed in the hardest cells, but only the naive baseline produces near-zero coverage.
+
+The asymmetry across regime counts has a clean interpretation. In binary problems the modal class is correct whenever correct-class probability exceeds $0.5$, so hard classification recovers approximately the right partition even when the classifier is noisy. In many-regime problems the modal class is wrong on a large share of observations once correct-class probability falls below $1/R + \epsilon$, so naive estimation pools the wrong observations within each predicted regime and inherits classifier error as bias and undercoverage. The likelihood correction routes around this by reweighting every unit by its full posterior over true regimes, which preserves identification as long as the posteriors vary across units. The correction's payoff is therefore monotone in $R$, and it is largest precisely in the many-category settings where modern ML pipelines are most often deployed.
+
+## RMSE, bias, and the IRLS-MLE near-identity
+
+Figure 3 plots slope RMSE against classifier error probability, with panels for shock correlation and lines for the MLE, IRLS, and naive estimators across regime counts.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{../results/figures/figure_2_rmse_frontier.pdf}
+\caption{Slope RMSE against classifier error probability, with panels for shock correlation and lines for the MLE, IRLS, and naive baseline across regime counts.}
+\label{fig:rmse-frontier}
+\end{figure}
+
+The RMSE pattern mirrors the coverage result. In moderate designs the corrected estimator is accurate. For $w \le 0.7$, mean MLE slope RMSE is 0.029 for $R = 2$, 0.041 for $R = 4$, and 0.092 for $R = 10$. These values increase with regime count, as expected, but they are small relative to the range of true slopes used in the simulation.
+
+At $w = 0.9$, RMSE rises sharply for high-regime designs. With no shock correlation, MLE slope RMSE is 0.913 for $R = 4$ and 1.268 for $R = 10$. With shock correlation $0.9$, MLE slope RMSE is 3.357 for $R = 4$ and 2.520 for $R = 10$. These failures show up in both RMSE and coverage, so the issue in the hardest cells is not standard-error calibration; it is a weak-classification problem that affects point estimation directly. Table A1 in Appendix B reports the full performance grid.
+
+\begin{table}[htbp]
+\centering
+\caption{Slope performance by estimator and design cell, $\rho = 0.6$.}
+\label{tab:perf-rho06}
+\input{../results/tables/table_A1_performance_rho_0_6.tex}
+\begin{flushleft}
+{\small \textit{Note.} Bias, mean absolute bias, and RMSE for the slope coefficient. The compact LaTeX table reports the central $\rho = 0.6$ design; the CSV companion has all 72 cells.}
+\end{flushleft}
+\end{table}
+
+The most instructive secondary finding is that IRLS and MLE are nearly indistinguishable in the RMSE frontier. Across all 72 design cells, mean slope RMSE is 0.264 for IRLS and 0.263 for MLE. This is unexpected given the conceptual gap between the two estimators: IRLS optimizes a sequence of weighted least-squares problems, while MLE optimizes the observed-data likelihood directly. I read the near-identity as a useful diagnostic. Any future application in which IRLS and MLE point estimates disagree materially should be treated as a flag for misspecification, weak identification, or numerical pathology in the optimizer. The MLE remains the primary estimator in this paper because it provides the inference objects evaluated above.
+
+Figure 4 focuses on the baseline two-regime, uncorrelated-shock design. It shows the distribution of MLE slope errors across the misclassification grid.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{../results/figures/figure_3_baseline_bias_distribution.pdf}
+\caption{Distribution of MLE slope errors in the baseline $R = 2$, $\rho = 0$ design across the misclassification grid. Boxplots show interquartile range and medians; jittered points show individual replication errors.}
+\label{fig:baseline-bias}
+\end{figure}
+
+The distributions remain centered near zero. Misclassification raises uncertainty, but with enough classifier signal and a correctly specified confusion matrix, it does not introduce systematic slope bias in the corrected likelihood estimator. This is the visual answer to why coverage holds in the two-regime design across the entire misclassification grid.
+
+\FloatBarrier
+
+# Discussion
+
+The simulation supports four practical implications.
+
+First, applied researchers should use soft classifier output rather than hard predicted labels whenever the regime count exceeds two. The naive comparison in Section 5.2 shows that hard classification works for binary problems but fails badly as $R$ grows. The likelihood correction depends on the full probability vector and the confusion matrix, and collapsing the classifier to its modal class discards the information about uncertainty that the correction relies on. In many-category prediction problems generated by modern ML pipelines, the difference is the difference between near-zero coverage and approximately-correct coverage at high misclassification.
+
+Second, validation data are not optional. The confusion matrix is the bridge between predicted regimes and true regimes. In applications, it must come from labeled validation data, a credible audit sample, or another defensible calibration source. The simulation here uses the true confusion matrix; realistic applications will use an estimated one. A natural extension is a robustness simulation that perturbs the confusion matrix, which I leave for future work.
+
+Third, researchers should report classifier signal in a way that is meaningful for the number of regimes. The simulation shows why the raw misclassification weight is not enough. A high error rate in a binary problem is different from the same weight in a ten-class problem. Reporting implied correct-class probabilities, classifier entropy, or other measures of classification informativeness should be standard in applications using predicted regimes.
+
+Fourth, the IRLS-MLE near-identity is itself diagnostic. Where the two agree, point estimates are credible and the question reduces to which standard error to trust. Where they disagree, applied users should pause before relying on either.
+
+The simulation also has visible limitations. The current evidence assumes a known and correctly specified confusion matrix, fixes regime within unit, and uses a Gaussian outcome equation with common variance. Each restriction is defensible in the simulation context but should be relaxed before pushing the method into applied use. Misspecified confusion matrices, validation-sample noise in the matrix, regime switching within unit across periods, and heterogeneous variance across regimes are all natural extensions. They would move the paper closer to applied practice, where the classifier is estimated, the validation sample may be small, and the latent regime structure may not match a stylized DGP.
+
+The high-misclassification failures should be treated as a feature of the evidence rather than an embarrassment. The estimator should not be expected to identify many regime-specific slopes when classifier probabilities are nearly uniform and shocks are highly correlated. The useful contribution is to show where the boundary is. In moderate designs, the method works well and dominates naive estimation; in weak-classifier many-regime designs, it warns the researcher not to overfit heterogeneity that the data cannot support.
+
+\FloatBarrier
+
+# Conclusion
+
+This paper extends the generated-regressor framework of [Battaglia et al., 2024] to switching regressions with ML-generated regime labels. The estimator combines the classifier's soft predictions with a column-normalized confusion matrix to form unit-level posteriors over true regimes, uses an IRLS routine for stable starting values, and estimates the model by full maximum likelihood. In a 72-cell Monte Carlo with 153,600 parameter-replication rows, the corrected estimator delivers near-nominal coverage under moderate misclassification and produces large bias and coverage gains over a naive hard-classification baseline once the regime count exceeds two.
+
+The headline finding is that the correction is consequential where applied research is moving fastest. In binary classification problems, the naive baseline matches the corrected estimator and the practical case for the correction is weak. In four- and ten-class problems, the naive baseline collapses while the corrected estimator continues to deliver usable coverage until the classifier becomes nearly uninformative. The correction therefore solves the empirical problem most likely to face researchers using modern multi-category classifiers as inputs to switching regressions.
+
+For applied work, the recommendation is straightforward: do not treat predicted regimes as truth. Use the classifier's full probability vector, calibrate the confusion matrix, report classifier signal, and stress-test inference as the number of regimes grows. The simulation evidence here provides a first map of when that workflow is reliable and a quantitative reason to abandon naive hard-classification estimation in many-category settings.
+
+\newpage
+
+# References {.unnumbered}
+
+The references in the body are formatted as inline name-year prose. A formal author-year bibliography file (`references.bib`) ships alongside the source for the next render pass. Until that pass is run, the cited works listed below match the in-line citations.
+
+- [Aigner, 1973] D. J. Aigner. *Regression with a binary independent variable subject to errors of observation.* Journal of Econometrics.
+- [Athey and Imbens, 2019] S. Athey and G. W. Imbens. *Machine learning methods that economists should know about.* Annual Review of Economics.
+- [Bai and Ng, 2006] J. Bai and S. Ng. *Confidence intervals for diffusion index forecasts and inference for factor-augmented regressions.* Econometrica.
+- [Baker, Bloom, and Davis, 2016] S. R. Baker, N. Bloom, and S. J. Davis. *Measuring economic policy uncertainty.* Quarterly Journal of Economics.
+- [Bandiera et al., 2020] O. Bandiera, A. Prat, S. Hansen, and R. Sadun. *CEO behavior and firm performance.* Journal of Political Economy.
+- [Battaglia et al., 2024] L. Battaglia, T. Christensen, S. Hansen, and S. Sacher. *Inference for regression with variables generated by AI or machine learning.* arXiv:2402.15585.
+- [Bernanke, Boivin, and Eliasz, 2005] B. S. Bernanke, J. Boivin, and P. Eliasz. *Measuring the effects of monetary policy: A factor-augmented vector autoregressive (FAVAR) approach.* Quarterly Journal of Economics.
+- [Bollinger, 1996] C. R. Bollinger. *Bounding mean regressions when a binary regressor is mismeasured.* Journal of Econometrics.
+- [Cameron, Gelbach, and Miller, 2008] A. C. Cameron, J. B. Gelbach, and D. L. Miller. *Bootstrap-based improvements for inference with clustered errors.* Review of Economics and Statistics.
+- [Chernozhukov et al., 2018] V. Chernozhukov, D. Chetverikov, M. Demirer, E. Duflo, C. Hansen, W. Newey, and J. Robins. *Double/debiased machine learning for treatment and structural parameters.* The Econometrics Journal.
+- [Egami et al., 2023] N. Egami, M. Jacobs-Harukawa, B. M. Stewart, and H. Wei. *Using imperfect surrogates for downstream inference: Design-based supervised learning for social science applications of large language models.* NeurIPS.
+- [Goldfeld and Quandt, 1973] S. M. Goldfeld and R. E. Quandt. *A Markov model for switching regressions.* Journal of Econometrics.
+- [Goller, 2020] D. Goller, M. Lechner, A. Moczall, and J. Wolff. *Does the estimation of the propensity score by machine learning improve matching estimation?* Labour Economics.
+- [Hamilton, 1989] J. D. Hamilton. *A new approach to the economic analysis of nonstationary time series and the business cycle.* Econometrica.
+- [Heckman, 1979] J. J. Heckman. *Sample selection bias as a specification error.* Econometrica.
+- [Hoberg and Phillips, 2016] G. Hoberg and G. Phillips. *Text-based network industries and endogenous product differentiation.* Journal of Political Economy.
+- [Hu, 2008] Y. Hu. *Identification and estimation of nonlinear models with misclassification error using instrumental variables: A general solution.* Journal of Econometrics.
+- [Imbens, 2000] G. W. Imbens. *The role of the propensity score in estimating dose-response functions.* Biometrika.
+- [Kline and Santos, 2012] P. Kline and A. Santos. *A score based approach to wild bootstrap inference.* Journal of Econometric Methods.
+- [Lee, Lessler, and Stuart, 2010] B. K. Lee, J. Lessler, and E. A. Stuart. *Improving propensity score weighting using machine learning.* Statistics in Medicine.
+- [Lewbel, 2007] A. Lewbel. *Estimation of average treatment effects with misclassification.* Econometrica.
+- [Mahajan, 2006] A. Mahajan. *Identification and estimation of regression models with misclassification.* Econometrica.
+- [Michuda, 2023] A. Michuda. *Rural-urban risk sharing networks: Uber driver labor supply responses to shocks in Uganda.* Working paper.
+- [Mullainathan and Spiess, 2017] S. Mullainathan and J. Spiess. *Machine learning: An applied econometric approach.* Journal of Economic Perspectives.
+- [Pagan, 1984] A. Pagan. *Econometric issues in the analysis of regressions with generated regressors.* International Economic Review.
+- [Quandt, 1972] R. E. Quandt. *A new approach to estimating switching regressions.* Journal of the American Statistical Association.
+- [Stock and Watson, 2002] J. H. Stock and M. W. Watson. *Forecasting using principal components from a large number of predictors.* Journal of the American Statistical Association.
+- [Westreich, Lessler, and Funk, 2010] D. Westreich, J. Lessler, and M. J. Funk. *Propensity score estimation: Neural networks, support vector machines, decision trees (CART), and meta-classifiers as alternatives to logistic regression.* Journal of Clinical Epidemiology.
+
+\newpage
+
+\appendix
+\renewcommand{\thesection}{\Alph{section}}
+\renewcommand{\theequation}{\Alph{section}\arabic{equation}}
+\renewcommand{\thetable}{\Alph{section}\arabic{table}}
+\renewcommand{\thefigure}{\Alph{section}\arabic{figure}}
+\setcounter{equation}{0}
+\setcounter{table}{0}
+\setcounter{figure}{0}
+
+# Appendix A: Computation and Convergence {.unnumbered}
+
+Figure A1 reports computational feasibility. It plots mean runtime per replication for IRLS, MLE, and the score wild bootstrap, and it reports MLE convergence by regime count.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{../results/figures/figure_4_computation_tradeoffs.pdf}
+\caption{Computational tradeoffs by regime count. Left: mean runtime per replication on a log scale, by estimator stage. Right: mean MLE convergence rate.}
+\label{fig:computation}
+\end{figure}
+
+The estimator is computationally feasible at the current simulation scale, but runtime grows quickly with the number of regimes. Mean MLE time is 0.135 seconds for $R = 2$, 0.597 seconds for $R = 4$, and 6.315 seconds for $R = 10$. The score wild bootstrap adds further cost, with mean times of 0.121, 0.435, and 3.448 seconds for two, four, and ten regimes respectively.
+
+Convergence remains high. The mean MLE convergence rate is 0.998 for $R = 2$, 0.995 for $R = 4$, and 0.984 for $R = 10$. The major limitation in the hardest cells is therefore not optimizer failure; it is weak information about regime membership when the classifier is nearly uninformative and the regression design is difficult. Table A3 reports compact timing and convergence numbers.
+
+\begin{table}[htbp]
+\centering
+\caption{Convergence and timing by regime count and misclassification weight.}
+\label{tab:timing}
+\input{../results/tables/table_A3_timing_by_regime_weight.tex}
+\begin{flushleft}
+{\small \textit{Note.} Mean per-replication seconds for IRLS, MLE, and score wild bootstrap, plus mean MLE convergence rate. Averaged over shock correlations.}
+\end{flushleft}
+\end{table}
+
+\FloatBarrier
+
+# Appendix B: Tables {.unnumbered}
+
+Tables A0--A3 are produced by the simulation pipeline shipped with the paper source. Compact LaTeX versions appear in the body and in this appendix; CSV companions report the full grid.
+
+\FloatBarrier

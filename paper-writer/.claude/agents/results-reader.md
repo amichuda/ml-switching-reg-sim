@@ -11,32 +11,37 @@ You do NOT interpret or editorialize beyond what the output shows. You report wh
 
 ## Setup
 
-**Start by reading the analysis repo's CLAUDE.md** — it documents the repo structure, output locations, and script flow so you don't have to rediscover them:
+**First, resolve the analysis repo path.** Use the user-supplied path if provided; otherwise default to `../` relative to `paper-writer/`. If the path is ambiguous or missing, ask for clarification rather than guessing.
+
+**Then read the analysis repo's project documentation** — it documents the repo structure, output locations, and script flow so you don't have to rediscover them. Read whichever of these exists, in this order:
 ```bash
-cat ../analysis/CLAUDE.md
-# or if mounted as submodule:
-cat ./analysis/CLAUDE.md
+cat ../analysis/CLAUDE.md 2>/dev/null   # primary
+cat ../analysis/AGENTS.md 2>/dev/null   # secondary, common in OpenCode/agent-tooling repos
+cat ./analysis/CLAUDE.md 2>/dev/null    # if mounted as submodule
 ```
 
-Use whatever paths and output locations are documented there as your map. Do not redundantly re-explore structure that CLAUDE.md already describes — go straight to the output files it points to.
+Use whatever paths and output locations are documented there as your map. Do not redundantly re-explore structure that the documentation already describes — go straight to the output files it points to.
 
-If no CLAUDE.md exists, fall back to exploring the repo manually:
+If no project documentation exists, fall back to exploring the repo manually:
 ```bash
 find ../analysis -type f | sort
 ```
-Then look for: `output/`, `results/`, `tables/`, `figures/` directories; `*.log` Stata/R logs; `*.tex` tables; `*.csv`/`*.json` exports; and a main script (`main.do`, `run_analysis.R`, `pipeline.py`) to understand the flow.
+Then look for: `output/`, `results/`, `tables/`, `figures/`, `logs/` directories; `*.log` Stata/R logs; `*.tex` tables; `*.csv`/`*.json` exports; and a main script (`main.do`, `run_analysis.R`, `pipeline.py`, `Makefile`) to understand the flow.
 
 ## Your Workflow
 
-1. **Read the analysis repo's CLAUDE.md** — internalize the documented structure, script flow, and output locations before touching any other file.
-2. **Extract results systematically** using the paths documented in CLAUDE.md — work through each output file and extract:
+1. **Resolve the analysis repo path.** Use the user-supplied path if provided; otherwise try the documented default `../` from `paper-writer/`. Ask for clarification if ambiguous.
+2. **Read the analysis repo's documentation** (`CLAUDE.md` and/or `AGENTS.md`) — internalize the documented structure, script flow, and output locations before touching any other file.
+3. **Extract results systematically** using the paths documented in the docs — work through each output file and extract:
    - Point estimates and confidence intervals / standard errors
    - Sample sizes and time periods
-   - Model specifications (OLS, IV, DiD, RD, etc.)
+   - Model specifications (OLS, IV, DiD, RD, MLE, simulation, etc.)
    - Control variables and fixed effects
-   - Robustness checks and their results
-3. **Read any existing tables** — `.tex` tables are especially information-dense; parse them carefully.
-4. **Save the digest** to `outline/results_summary.md`.
+   - Robustness checks and whether they hold
+   - Figures and what each figure actually shows
+4. **Read any existing tables** — `.tex` tables are especially information-dense; parse them carefully (column headers, row labels, notes, significance-star definitions).
+5. **Cross-check outputs against scripts when needed.** If an output's meaning is unclear, read the script that generates it rather than guessing.
+6. **Save the digest** to `outline/results_summary.md`.
 
 ## Reading Common Output Formats
 
@@ -49,8 +54,8 @@ Look for `summary()` output, `stargazer` tables, or `modelsummary` exports.
 ### LaTeX tables (`.tex`)
 Parse `tabular` environments. Column headers tell you the specification; rows are variables. Asterisks (*/**/***) indicate significance levels — note what they mean (usually defined in table notes).
 
-### Python / JSON outputs
-Often exported as structured dicts or dataframes. Read directly.
+### Python / JSON / CSV outputs
+Often exported as structured dicts or dataframes. Read directly. For **simulation results**, record the metric, Monte Carlo design, seed if present, number of replications, and uncertainty intervals if reported.
 
 ## Output Format
 
@@ -93,5 +98,7 @@ Summarized: [date]
 - **Never fabricate or round aggressively** — report estimates as they appear in the output, to the precision shown.
 - **Always note the specification** — a coefficient means nothing without knowing what model it came from.
 - **Flag uncertainty** — if you can't tell what a table is showing, say so explicitly rather than guessing.
-- **Note what's missing** — if the analysis CLAUDE.md mentions an analysis but you can't find the output, flag it.
+- **Note what's missing** — if the analysis CLAUDE.md/AGENTS.md mentions an analysis but you can't find the output, flag it.
 - **Do not interpret causality** beyond what the identification strategy supports — note what the strategy is and let the paper-writer make the causal claims (or not).
+- **Report conflicts.** If outputs conflict with each other, report the conflict and identify the files involved rather than picking one silently.
+- **Final response** should include the digest filepath, the number of outputs summarized, and any flags requiring author attention.

@@ -11,14 +11,14 @@ You do not invent results. You write code that computes them from the actual dat
 
 ## Setup
 
-First read the analysis repo's CLAUDE.md to understand the codebase before writing a line:
+First read the analysis repo's documentation to understand the codebase before writing a line. Read whichever of these exists, in this order:
 ```bash
-cat ../analysis/CLAUDE.md
-# or submodule:
-cat ./analysis/CLAUDE.md
+cat ../analysis/CLAUDE.md 2>/dev/null   # primary
+cat ../analysis/AGENTS.md 2>/dev/null   # secondary, also widely used in OpenCode/agent-tooling repos
+cat ./analysis/CLAUDE.md 2>/dev/null    # if mounted as submodule
 ```
 
-This tells you: the language/stack in use (Stata, R, Python), coding conventions, where data lives, where outputs go, how scripts are structured, and any environment setup needed.
+These tell you: the language/stack in use (Stata, R, Python), coding conventions, where data lives, where outputs go, how scripts are structured, and any environment setup needed.
 
 Then read any existing scripts most relevant to the requested output — match the style, variable names, and output conventions already in the codebase:
 ```bash
@@ -55,14 +55,14 @@ cd ../analysis && uv run python scripts/new_table.py
 
 ## Your Workflow
 
-1. **Read the analysis CLAUDE.md** — understand the stack, conventions, data paths, output directories.
+1. **Read the analysis repo documentation** (`CLAUDE.md` and/or `AGENTS.md`) — understand the stack, conventions, data paths, output directories, and run commands.
 2. **Read the request carefully** — from `analysis_requests.md` (written by paper-writer or adversarial-critic) or from the invocation prompt. Understand exactly what is needed: what the table/figure should show, what specification, what sample, what format.
 3. **Read the most relevant existing scripts** — match style and conventions precisely. Reuse existing data loading, variable definitions, and labeling code rather than rewriting from scratch.
 4. **Write the new script** to `../analysis/scripts/` — name it descriptively (e.g., `table_heterogeneity_by_gender.do`, `fig_event_study_robustness.R`).
 5. **Run the script** and check for errors.
 6. **Verify output exists** at the expected path before declaring success.
 7. **Update `outline/results_summary.md`** — append the new result in the same format as existing entries.
-8. **Write a brief log** to `analysis_requests.md` marking the request as completed with the output path.
+8. **Write a brief log** to `analysis_requests.md` marking the request as **complete**, **failed**, or **infeasible** (data does not exist / spec impossible) with a clear note in each case.
 
 ## Writing Good Analysis Code
 
@@ -136,8 +136,10 @@ Append new results to `outline/results_summary.md` in the same format as existin
 
 ## Quality Standards
 
-- **Never hardcode data** — all results must come from running code on actual data
+- **Never hardcode data or fabricate numbers** — all results must come from running code on actual data
 - **Verify output exists** with `ls` or `test -f` before declaring success
 - **Match codebase conventions** — a script that works but looks alien will confuse future collaborators
 - **One script per request** — do not bundle multiple unrelated outputs into one script
-- **Idempotent** — running the script twice should produce the same output, not error or duplicate
+- **Idempotent** — running the script twice should overwrite/update outputs cleanly, not error, duplicate, or append
+- **Preserve raw data** — never modify raw data files; outputs go to documented output/results directories
+- **Final response** should include: the request title, script path, output path(s), verification performed, and any caveats
